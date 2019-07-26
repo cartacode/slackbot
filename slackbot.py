@@ -8,6 +8,8 @@ from simple_salesforce import Salesforce
 from slackclient import SlackClient
 from dotenv import load_dotenv
 
+import pdb
+
 # load settings from .env file
 load_dotenv()
 
@@ -46,7 +48,7 @@ class FloatAPI:
         if resp.status_code == 200:
             self.projects = resp.json()
         else:
-            print("error")
+            return None
 
     def get_person_by_id(self, people_id=17145442):
         resp = requests.get("{}/people/{}".format(self.url, people_id),
@@ -55,15 +57,16 @@ class FloatAPI:
         if resp.status_code < 400:
             return resp.json()
         else:
-            print("The person doesn\"t exists")
+            return None
 
     def get_projects(self):
         resp = requests.get(self.url+"/projects", headers=self.base_headers)
 
         if resp.status_code == 200:
             self.projects = resp.json()
+            return self.projects
         else:
-            print("error")
+            return None
 
     def get_project_by_id(self, project_id=17145442):
         resp = requests.get("{}/projects/{}".format(self.url, project_id),
@@ -72,15 +75,16 @@ class FloatAPI:
         if resp.status_code < 400:
             return resp.json()
         else:
-            print("The project doesn\"t exists")
+            return None
 
     def get_tasks(self):
         resp = requests.get(self.url+"/tasks", headers=self.base_headers)
 
         if resp.status_code == 200:
             self.projects = resp.json()
+            return self.tasks
         else:
-            print("error")
+            return None
 
     def get_task_by_id(self, task_id=17145442):
         resp = requests.get("{}/tasks/{}".format(self.url, task_id),
@@ -89,7 +93,7 @@ class FloatAPI:
         if resp.status_code < 400:
             return resp.json()
         else:
-            print("The tasl doesn\"t exists")
+            return None
             
 
 
@@ -97,18 +101,25 @@ class ScheduleBot:
     """
         slackbot class
     """
-    def __init__(self, session_id=None):
-        # self.sf = Salesforce(instance=SALESFORCE_URL, session_id=session_id)
+    def __init__(self):
+        # instantiate Salesforce instance
+        self.sf = None
+        self.project_table_name = 'pse__Proj__c'
 
         # instantiate Slack client
         self.slack_client = SlackClient(os.environ.get("SLACK_BOT_TOKEN"))
         # bot's user ID in Slack: value is assigned after the bot starts up
         self.slack_client_id = None
 
-    def test_salesforce(self):
-        end = datetime.datetime.now(pytz.UTC)
-        records = self.sf.Contact.updated(end - datetime.timedelta(days=10), end)
-        print(records)
+    def create_salesforce_instance(self, session_id):
+        self.sf = Salesforce(instance=SALESFORCE_URL, session_id=session_id)
+
+    def set_project_table_name(self):
+        sobjects = self.sf.query_more("/services/data/v37.0/sobjects/", True)
+        for sobject in sobjects["sobjects"]:
+            if sobject["labelPlural"] == "Projects":
+                self.project_table_name = sobject.name
+
 
     def parse_bot_commands(self, slack_events):
         """
@@ -173,6 +184,10 @@ class ScheduleBot:
 
 
 if __name__ == "__main__":
-    bot = ScheduleBot()
-    bot.run()
+    session_id="00D30000001ICYF!AQ4AQPh_V9_Q5ZsJ6TQGROrDEEaMgln7RDSnOu5cUxHqGSPNTOUA6MH_nv2hZIuxAiB2m0jfb.IDFM6BphxDTShCAzybW.c3"
+    bot = ScheduleBot(session_id)
+    bot.test_salesforce()
+
+    # bot = ScheduleBot()
+    # bot.run()
     
