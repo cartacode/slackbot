@@ -182,11 +182,48 @@ class ScheduleBot:
         else:
             print("Connection failed. Exception traceback printed above.")
 
+    def test(self):
+        sobject = self.sf.query_more("/services/data/v37.0/sobjects/pse__Proj__c", True)
+        projects = sobject["recentItems"]
+
+        for project in projects:
+            if "Southern Indiana Pediatrics" in project["Name"]:
+                project_id = project["attributes"]["url"].split("/")[-1]
+                milestone_id = self.get_milestone_id(project_id)
+                if milestone_id is None:
+                    print('milestone no')
+
+                tasks = self.get_task_by_milestone_id(project_id, milestone_id)
+                for task in tasks:
+                    print(task)
+
+    def get_milestone_id(self, project_id, milestone_name='Implementation and Training'):
+        query = "select Id, Name from pse__Milestone__c \
+                where (pse__Project__c='{}' and Name='{}')".format(project_id, milestone_name)
+        sobject = self.sf.query(query)
+
+        if sobject["totalSize"] == 0:
+            return None
+
+        return sobject["records"][0]['Id']
+
+    def get_task_by_milestone_id(self, project_id, milestone_id):
+        query = "select Id, pse__Project__c from pse__Project_Task__c \
+                where (pse__Project__c='{}' and pse__Milestone__c='{}')".format(project_id, milestone_id)
+
+        sobject = self.sf.query(query)
+        print(query)
+
+        if sobject["totalSize"] == 0:
+            return []
+
+        return sobject["records"]         
 
 if __name__ == "__main__":
-    session_id="00D30000001ICYF!AQ4AQPh_V9_Q5ZsJ6TQGROrDEEaMgln7RDSnOu5cUxHqGSPNTOUA6MH_nv2hZIuxAiB2m0jfb.IDFM6BphxDTShCAzybW.c3"
-    bot = ScheduleBot(session_id)
-    bot.test_salesforce()
+    session_id="00D30000001ICYF!AQ4AQI6BUgKPwydfcnrNrilIvdC7ZuZnZSFKiqorug0Odatmeqlnnv0.VtU1C09YdXxvSjJ1dQB01UoAVtF_VcpVdbJUX2Sl"
+    bot = ScheduleBot()
+    bot.create_salesforce_instance(session_id)
+    bot.test()
 
     # bot = ScheduleBot()
     # bot.run()
