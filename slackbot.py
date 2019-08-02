@@ -7,6 +7,7 @@ import pytz
 from simple_salesforce import Salesforce, SFType
 from slackclient import SlackClient
 from dotenv import load_dotenv
+import pytz
 import pdb
 
 # load settings from .env file
@@ -180,6 +181,7 @@ class ScheduleBot:
 
         # This is where you start to implement more commands!
         if command.startswith(EXAMPLE_COMMAND):
+            eastern = pytz.timezone('US/Eastern')
             self.slack_client.api_call(
                 "chat.postMessage",
                 channel=channel,
@@ -218,22 +220,21 @@ class ScheduleBot:
                                 for sf_task in sf_tasks:
                                     # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
                                     if float_task["name"] == sf_task["Name"]:
+                                        start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d')
+                                        end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d')
                                         params = {
                                             'pse__Assigned_Resources__c': fl_user["name"],
                                             'pse__Assigned_Resources_Long__c': fl_user["name"],
-                                            'pse__Start_Date_Time__c': datetime.strptime(float_task['start_date'], '%Y-%m-%d').isoformat(),
-                                            'pse__End_Date_Time__c': datetime.strptime(float_task['end_date'], '%Y-%m-%d').isoformat()
+                                            'pse__Start_Date_Time__c': eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S"),
+                                            'pse__End_Date_Time__c': eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
                                         }
+
                                         result = sf_project_task.update(sf_task["Id"], params, False)
 
                                         task_status_response = ''
                                         if result < 400:
                                             self.number_of_success = self.number_of_success + 1
-                                            task_status_response = "Task '{}' is updated. (Project {})".format(float_task["name"],
-                                                                                                                float_tasks[0]["project_id"])
-                                        else:
-                                            task_status_response = "Task '{}' is not updated! (Project {})".format(float_task["name"],
-                                                                                                                    float_tasks[0]["project_id"])
+                                            task_status_response = "Updated start time on TASK | project".format(float_tasks[0]["project_id"])
                             
                                         self.slack_client.api_call(
                                             "chat.postMessage",
@@ -337,7 +338,5 @@ if __name__ == "__main__":
     session_id="00D30000001ICYF!AQ4AQFD5sQAO_wr5B9jE.QwTQDufPwUjRdoagJLS64hgZZYi3waUnFhn1CP3L3D63EYtyB4ft0dWyYLIi6Grgn2kBG1F9QCo"
     bot = ScheduleBot()
     bot.run()
-    
-
 
     
