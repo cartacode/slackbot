@@ -1,6 +1,6 @@
 import os
 import requests
-import datetime
+from datetime import datetime
 import time
 import re
 import pytz
@@ -186,64 +186,75 @@ class ScheduleBot:
                 text='wait for a moment, please'
             )
 
+            session_id = command.replace(EXAMPLE_COMMAND, '').strip()
+            print(session_id)
+            self.create_salesforce_instance(session_id)
+
+            is_session_valid = True
             try:
-                session_id = command.replace(EXAMPLE_COMMAND, '').strip()
-                self.create_salesforce_instance(session_id)
-
-                sf_tasks = []       
-                sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
-                float_api = FloatAPI()
-                # float_tasks = float_api.test()
-
-                projects = float_api.get_projects()
-                for project in projects:
-                    float_tasks = float_api.get_tasks_by_params('project_id={}'.format(project["project_id"]))
-
-                    if len(float_tasks) > 0:
-                        tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
-                        for tag in tags:
-                            if 'PR-' in tag:
-                                sf_tasks = bot.test(tag)
-
-                        for float_task in float_tasks:
-                            fl_user = float_api.get_person_by_id(float_task["people_id"])
-                            for sf_task in sf_tasks:
-                                # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
-                                if float_task["name"] == sf_task["Name"]:
-
-                                    result = sf_project_task.upsert(
-                                            sf_task["Id"],
-                                            {
-                                                'pse__Assigned_Resources__c': fl_user["name"],
-                                                'pse__Assigned_Resources_Long__c': fl_user["name"]
-                                            }, False)
-
-                                    task_status_response = ''
-                                    if result < 400:
-                                        self.number_of_success = self.number_of_success + 1
-                                        task_status_response = "Task '{}' is updated. (Project {})".format(float_task["name"],
-                                                                                                            float_tasks[0]["project_id"])
-                                    else:
-                                        task_status_response = "Task '{}' is not updated! (Project {})".format(float_task["name"],
-                                                                                                                float_tasks[0]["project_id"])
-                        
-                                    self.slack_client.api_call(
-                                        "chat.postMessage",
-                                        channel=channel,
-                                        text=task_status_response
-                                    )
-
-                if self.number_of_success == 0:
-                    response = "Couldn't find tasks in salesforce"
+                self.sf.query_more("/services/data/v37.0/sobjects/", True)
             except:
-                response = "There is something wrong when updating!"
+                is_session_valid = False
 
-        # Sends the response back to the channel
-        self.slack_client.api_call(
-            "chat.postMessage",
-            channel=channel,
-            text=response or default_response
-        )
+            if is_session_valid:
+                try:
+                    sf_tasks = []       
+                    sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
+                    float_api = FloatAPI()
+
+                    projects = float_api.get_projects()
+                    for project in projects:
+                        # float_tasks = float_api.test()
+                        float_tasks = float_api.get_tasks_by_params('project_id={}'.format(project["project_id"]))
+
+                        if len(float_tasks) > 0:
+                            tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
+                            for tag in tags:
+                                if 'PR-' in tag:
+                                    sf_tasks = bot.test(tag)
+
+                            for float_task in float_tasks:
+                                fl_user = float_api.get_person_by_id(float_task["people_id"])
+                                for sf_task in sf_tasks:
+                                    # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
+                                    if float_task["name"] == sf_task["Name"]:
+                                        params = {
+                                            'pse__Assigned_Resources__c': fl_user["name"],
+                                            'pse__Assigned_Resources_Long__c': fl_user["name"],
+                                            'pse__Start_Date_Time__c': datetime.strptime(float_task['start_date'], '%Y-%m-%d').isoformat(),
+                                            'pse__End_Date_Time__c': datetime.strptime(float_task['end_date'], '%Y-%m-%d').isoformat()
+                                        }
+                                        result = sf_project_task.update(sf_task["Id"], params, False)
+
+                                        task_status_response = ''
+                                        if result < 400:
+                                            self.number_of_success = self.number_of_success + 1
+                                            task_status_response = "Task '{}' is updated. (Project {})".format(float_task["name"],
+                                                                                                                float_tasks[0]["project_id"])
+                                        else:
+                                            task_status_response = "Task '{}' is not updated! (Project {})".format(float_task["name"],
+                                                                                                                    float_tasks[0]["project_id"])
+                            
+                                        self.slack_client.api_call(
+                                            "chat.postMessage",
+                                            channel=channel,
+                                            text=task_status_response
+                                        )
+
+                    if self.number_of_success == 0:
+                        response = "Couldn't find tasks in salesforce"
+
+                except:
+                    response = "There is something wrong when updating!"
+            else:
+                response = 'Session is incorrect or expired!'
+
+            # Sends the response back to the channel
+            self.slack_client.api_call(
+                "chat.postMessage",
+                channel=channel,
+                text=response or default_response
+            )
 
     def run(self):
         if self.slack_client.rtm_connect(with_team_state=False):
