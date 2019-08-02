@@ -7,8 +7,6 @@ import pytz
 from simple_salesforce import Salesforce, SFType
 from slackclient import SlackClient
 from dotenv import load_dotenv
-import dateutil
-
 import pdb
 
 # load settings from .env file
@@ -187,8 +185,8 @@ class ScheduleBot:
                 channel=channel,
                 text='wait for a moment, please'
             )
+
             session_id = command.replace(EXAMPLE_COMMAND, '').strip()
-            print(session_id)
             self.create_salesforce_instance(session_id)
 
             sf_tasks = []       
