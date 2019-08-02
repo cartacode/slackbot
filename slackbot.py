@@ -186,38 +186,57 @@ class ScheduleBot:
                 text='wait for a moment, please'
             )
 
-            session_id = command.replace(EXAMPLE_COMMAND, '').strip()
-            self.create_salesforce_instance(session_id)
+            try:
+                session_id = command.replace(EXAMPLE_COMMAND, '').strip()
+                self.create_salesforce_instance(session_id)
 
-            sf_tasks = []       
-            sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
-            float_api = FloatAPI()
-            float_tasks = float_api.test()
+                sf_tasks = []       
+                sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
+                float_api = FloatAPI()
+                # float_tasks = float_api.test()
 
-            tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
-            for tag in tags:
-                if 'PR-' in tag:
-                    sf_tasks = bot.test(tag)
+                projects = float_api.get_projects()
+                for project in projects:
+                    float_tasks = float_api.get_tasks_by_params('project_id={}'.format(project["project_id"]))
 
-            for float_task in float_tasks:
-                fl_user = float_api.get_person_by_id(float_task["people_id"])
-                for sf_task in sf_tasks:
-                    # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
-                    if float_task["name"] == sf_task["Name"]:
-                        result = sf_project_task.upsert(
-                                sf_task["Id"],
-                                {
-                                    'pse__Assigned_Resources__c': fl_user["name"],
-                                    'pse__Assigned_Resources_Long__c': fl_user["name"]
-                                }, False)
+                    if len(float_tasks) > 0:
+                        tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
+                        for tag in tags:
+                            if 'PR-' in tag:
+                                sf_tasks = bot.test(tag)
 
-                        if result < 400:
-                            self.number_of_success = self.number_of_success + 1
-            
-            if self.number_of_success > 0:
-                response = "{} tasks are updated!".format(self.number_of_success)
-            else:
-                response = "Couldn't find tasks in salesforce"
+                        for float_task in float_tasks:
+                            fl_user = float_api.get_person_by_id(float_task["people_id"])
+                            for sf_task in sf_tasks:
+                                # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
+                                if float_task["name"] == sf_task["Name"]:
+
+                                    result = sf_project_task.upsert(
+                                            sf_task["Id"],
+                                            {
+                                                'pse__Assigned_Resources__c': fl_user["name"],
+                                                'pse__Assigned_Resources_Long__c': fl_user["name"]
+                                            }, False)
+
+                                    task_status_response = ''
+                                    if result < 400:
+                                        self.number_of_success = self.number_of_success + 1
+                                        task_status_response = "Task '{}' is updated. (Project {})".format(float_task["name"],
+                                                                                                            float_tasks[0]["project_id"])
+                                    else:
+                                        task_status_response = "Task '{}' is not updated! (Project {})".format(float_task["name"],
+                                                                                                                float_tasks[0]["project_id"])
+                        
+                                    self.slack_client.api_call(
+                                        "chat.postMessage",
+                                        channel=channel,
+                                        text=task_status_response
+                                    )
+
+                if self.number_of_success == 0:
+                    response = "Couldn't find tasks in salesforce"
+            except:
+                response = "There is something wrong when updating!"
 
         # Sends the response back to the channel
         self.slack_client.api_call(
@@ -295,39 +314,18 @@ class ScheduleBot:
         if sobject["totalSize"] == 0:
             return []
 
-        return sobject["records"]         
+        return sobject["records"]
+
+    def format_time(self, time_val):
+        if time_val is None:
+            return time_val
+        return time_val.replace(' ', 'T')
+
 
 if __name__ == "__main__":
     session_id="00D30000001ICYF!AQ4AQFD5sQAO_wr5B9jE.QwTQDufPwUjRdoagJLS64hgZZYi3waUnFhn1CP3L3D63EYtyB4ft0dWyYLIi6Grgn2kBG1F9QCo"
     bot = ScheduleBot()
-    # bot.create_salesforce_instance(session_id)
     bot.run()
-    # # sf_tasks = bot.test('PR-207405')
-    # sf_tasks = []       
-
-    # sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
-    # float_api = FloatAPI()
-    # float_tasks = float_api.test()
-
-    # fl_user = float_api.get_person_by_id(float_tasks[0]["people_id"])
-    # tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
-
-    # for tag in tags:
-    #     if 'PR-' in tag:
-    #         sf_tasks = bot.test(tag)
-
-    # for float_task in float_tasks:
-    #     fl_user = float_api.get_person_by_id(float_task["people_id"])
-    #     for sf_task in sf_tasks:
-    #         # if float_task["name"] == sf_task["Name"]:
-    #         if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
-    #             print(sf_task)
-    #             result = sf_project_task.upsert(
-    #                     sf_task["Id"],
-    #                     {
-    #                         'pse__Assigned_Resources__c': fl_user["name"],
-    #                         'pse__Assigned_Resources_Long__c': fl_user["name"]
-    #                     }, False)
     
 
 
