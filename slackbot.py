@@ -7,6 +7,7 @@ import pytz
 from simple_salesforce import Salesforce, SFType
 from slackclient import SlackClient
 from dotenv import load_dotenv
+import dateutil
 
 import pdb
 
@@ -46,7 +47,8 @@ class FloatAPI:
         resp = requests.get(self.url+"/people", headers=self.base_headers)
 
         if resp.status_code == 200:
-            self.projects = resp.json()
+            self.people = resp.json()
+            return resp.json()
         else:
             return None
 
@@ -133,6 +135,8 @@ class ScheduleBot:
         self.slack_client = SlackClient(os.environ.get("SLACK_BOT_TOKEN"))
         # bot's user ID in Slack: value is assigned after the bot starts up
         self.slack_client_id = None
+        # variable to count updated tasks
+        self.number_of_success = 0
 
     def create_salesforce_instance(self, session_id):
         self.sf = Salesforce(instance=SALESFORCE_URL, session_id=session_id)
@@ -178,12 +182,44 @@ class ScheduleBot:
 
         # This is where you start to implement more commands!
         if command.startswith(EXAMPLE_COMMAND):
-            float_api = FloatAPI()
-            user = float_api.get_person_by_id()
-            response = "User doesn't exists"
-            if user:
-                response = "User name is {}".format(user["name"])
+            self.slack_client.api_call(
+                "chat.postMessage",
+                channel=channel,
+                text='wait for a moment, please'
+            )
+            session_id = command.replace(EXAMPLE_COMMAND, '').strip()
+            print(session_id)
+            self.create_salesforce_instance(session_id)
 
+            sf_tasks = []       
+            sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
+            float_api = FloatAPI()
+            float_tasks = float_api.test()
+
+            tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
+            for tag in tags:
+                if 'PR-' in tag:
+                    sf_tasks = bot.test(tag)
+
+            for float_task in float_tasks:
+                fl_user = float_api.get_person_by_id(float_task["people_id"])
+                for sf_task in sf_tasks:
+                    # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
+                    if float_task["name"] == sf_task["Name"]:
+                        result = sf_project_task.upsert(
+                                sf_task["Id"],
+                                {
+                                    'pse__Assigned_Resources__c': fl_user["name"],
+                                    'pse__Assigned_Resources_Long__c': fl_user["name"]
+                                }, False)
+
+                        if result < 400:
+                            self.number_of_success = self.number_of_success + 1
+            
+            if self.number_of_success > 0:
+                response = "{} tasks are updated!".format(self.number_of_success)
+            else:
+                response = "Couldn't find tasks in salesforce"
 
         # Sends the response back to the channel
         self.slack_client.api_call(
@@ -205,22 +241,23 @@ class ScheduleBot:
         else:
             print("Connection failed. Exception traceback printed above.")
 
-    def test(self, project_name):
-        sobject = self.sf.query_more("/services/data/v37.0/sobjects/pse__Proj__c", True)
+    def test(self, project_id):
+        sobject = self.sf.query_more("/services/data/v38.0/sobjects/pse__Proj__c", True)
         projects = sobject["recentItems"]
         tasks = []
 
-        for project in projects:
-            if project_name in project["Name"]:
-                project_id = project["attributes"]["url"].split("/")[-1]
-                milestone_id = self.get_milestone_id(project_id)
-                if milestone_id is None:
-                    print('milestone no')
+        milestone_obj = self.get_milestone_id(project_id)
+        if milestone_obj['milestone_id'] is None:
+            print('milestone no')
 
-                sf_tasks = self.get_task_by_milestone_and_product(project_id, milestone_id)
-                for task in sf_tasks:
-                    formatted_task = self.get_detail_task(task["attributes"]["url"])
-                    tasks.append(formatted_task)
+        sf_tasks = self.get_task_by_milestone_and_product(
+            milestone_obj['project_id'],
+            milestone_obj['milestone_id']
+        )
+
+        for task in sf_tasks:
+            formatted_task = self.get_detail_task(task["attributes"]["url"])
+            tasks.append(formatted_task)
         
         return tasks
     
@@ -230,72 +267,70 @@ class ScheduleBot:
 
 
     def get_milestone_id(self, project_id, milestone_name='Implementation and Training'):
-        query = "select Id, Name from pse__Milestone__c \
-                where (pse__Project__c='{}' and Name='{}')".format(project_id, milestone_name)
+        query = "select Id, Name from pse__Proj__c where pse__Project_ID__c='{}'".format(project_id)
+
         sobject = self.sf.query(query)
 
         if sobject["totalSize"] == 0:
             return None
 
-        return sobject["records"][0]['Id']
+        global_project_id = sobject["records"][0]['Id']
+
+        query = "select Id, Name from pse__Milestone__c \
+                where pse__Project__c='{}' and Name='{}'".format(global_project_id, milestone_name)
+        
+        sobject = self.sf.query(query)
+        if sobject["totalSize"] == 0:
+            return None
+
+        return {
+            'milestone_id': sobject["records"][0]['Id'],
+            'project_id': global_project_id
+        }
+
 
     def get_task_by_milestone_and_product(self, project_id, milestone_id):
         query = "select Id, pse__Project__c from pse__Project_Task__c \
                 where (pse__Project__c='{}' and pse__Milestone__c='{}')".format(project_id, milestone_id)
 
         sobject = self.sf.query(query)
-        print(sobject["totalSize"], '\n')
         if sobject["totalSize"] == 0:
             return []
 
         return sobject["records"]         
 
 if __name__ == "__main__":
-    session_id="00D30000001ICYF!AQ4AQOAYqwfDv8AA.4lmQrG1hESS9A50Tcc81Cd1HgT2I7IuJrf75_eWQCkgcEadqT3XDc12EEHxZNrEnwTyvFQeSCfqLLeV"
-    test_project_name = "Southern Indiana Ped"
+    session_id="00D30000001ICYF!AQ4AQFD5sQAO_wr5B9jE.QwTQDufPwUjRdoagJLS64hgZZYi3waUnFhn1CP3L3D63EYtyB4ft0dWyYLIi6Grgn2kBG1F9QCo"
     bot = ScheduleBot()
-    bot.create_salesforce_instance(session_id)
-    sf_tasks = bot.test(test_project_name)
+    # bot.create_salesforce_instance(session_id)
+    bot.run()
+    # # sf_tasks = bot.test('PR-207405')
+    # sf_tasks = []       
 
-    float_api = FloatAPI()
-    float_tasks = float_api.test()
+    # sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
+    # float_api = FloatAPI()
+    # float_tasks = float_api.test()
 
-    for float_task in float_tasks:
+    # fl_user = float_api.get_person_by_id(float_tasks[0]["people_id"])
+    # tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
 
-        flag = False
-        milestone_id = sf_tasks[0]["pse__Milestone__c"]
-        for sf_task in sf_tasks:
-            if float_task["name"] == sf_task["Name"]:
-                print("same")
-                flag = True
+    # for tag in tags:
+    #     if 'PR-' in tag:
+    #         sf_tasks = bot.test(tag)
 
-        if flag == False:
-            sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
-            print("============= create ================")
-
-            result = sf_project_task.create({
-                'Name': float_task['name'],
-                'CreatedDate': float_task['created'],
-                'pse__Start_Date__c': float_task['name'],
-                'pse__End_Date__c': float_task['name'],
-                'pse__Milestone__c': float_task['name']
-            })
-
-            pdb.set_trace()
-
+    # for float_task in float_tasks:
+    #     fl_user = float_api.get_person_by_id(float_task["people_id"])
+    #     for sf_task in sf_tasks:
+    #         # if float_task["name"] == sf_task["Name"]:
+    #         if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
+    #             print(sf_task)
+    #             result = sf_project_task.upsert(
+    #                     sf_task["Id"],
+    #                     {
+    #                         'pse__Assigned_Resources__c': fl_user["name"],
+    #                         'pse__Assigned_Resources_Long__c': fl_user["name"]
+    #                     }, False)
     
-    # contact = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
-    # tt =contact.get('a4F3A000000EGRfUAO')
-
-    # for key in tt:
-    #     print(key, '====:  ', tt[key])
-    # pdb.set_trace()
-    # contact = SFType('Contact', session_id, SALESFORCE_URL)
-
-    # tt =contact.get('0033A00002ShXKKQA3')
-
-    # for key in tt:
-    #     print(key, '====:  ', tt[key])
 
 
     
