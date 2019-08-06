@@ -1,0 +1,13 @@
+Starter Bot connected and running!
+(' start command : ', u'CLTE5DVAB')
+00D30000001ICYF!AQ4AQEtaZGkXjT3Z_lAo.HT2VsuDTnF1Fj9HomVO4Rz.lhNxi0nlH2n72zLT4EsHrLKIkWy4KGBCZ4fyeyPvtDVJT_9Tgy8m
+(' final : ', u'CLTE5DVAB')
+(' start command : ', u'CLTE5DVAB')
+sdfds
+(' final : ', u'CLTE5DVAB')
+Traceback (most recent call last):
+  File "slackbot.py", line 343, in <module>
+    bot.run()
+  File "slackbot.py", line 272, in run
+    time.sleep(RTM_READ_DELAY)
+KeyboardInterrupt

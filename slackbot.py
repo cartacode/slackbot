@@ -179,9 +179,16 @@ class ScheduleBot:
         # Finds and executes the given command, filling in response
         response = None
 
+        if not command.startswith(EXAMPLE_COMMAND):
+            self.slack_client.api_call(
+                "chat.postMessage",
+                channel=channel,
+                text=default_response
+            )
         # This is where you start to implement more commands!
         if command.startswith(EXAMPLE_COMMAND):
             eastern = pytz.timezone('US/Eastern')
+            print(' start command : ', channel)
             self.slack_client.api_call(
                 "chat.postMessage",
                 channel=channel,
@@ -234,8 +241,9 @@ class ScheduleBot:
                                         task_status_response = ''
                                         if result < 400:
                                             self.number_of_success = self.number_of_success + 1
-                                            task_status_response = "Updated start time on TASK | project".format(float_tasks[0]["project_id"])
+                                            task_status_response = "Updated start time on TASK | project {}".format(float_tasks[0]["project_id"])
                             
+                                        print(' result < 400 : ', channel)
                                         self.slack_client.api_call(
                                             "chat.postMessage",
                                             channel=channel,
@@ -250,6 +258,7 @@ class ScheduleBot:
             else:
                 response = 'Session is incorrect or expired!'
 
+            print(' final : ', channel)
             # Sends the response back to the channel
             self.slack_client.api_call(
                 "chat.postMessage",
@@ -258,7 +267,7 @@ class ScheduleBot:
             )
 
     def run(self):
-        if self.slack_client.rtm_connect(with_team_state=False):
+        if self.slack_client.rtm_connect(with_team_state=False, auto_reconnect=True):
             print("Starter Bot connected and running!")
             # Read bot's user ID by calling Web API method `auth.test`
             self.slack_client_id = self.slack_client.api_call("auth.test")["user_id"]
