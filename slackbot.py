@@ -229,45 +229,51 @@ class ScheduleBot:
                                     if float_task["name"] == sf_task["Name"]:
                                         start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d')
                                         end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d')
-                                        params = {
-                                            'pse__Assigned_Resources__c': fl_user["name"],
-                                            'pse__Assigned_Resources_Long__c': fl_user["name"],
-                                            'pse__Start_Date_Time__c': eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S"),
-                                            'pse__End_Date_Time__c': eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
-                                        }
 
-                                        result = sf_project_task.update(sf_task["Id"], params, False)
+                                        start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S")
+                                        end_datetime_obj = eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
 
-                                        task_status_response = ''
-                                        if result < 400:
-                                            self.number_of_success = self.number_of_success + 1
-                                            task_status_response = "Updated start time on TASK | project {}".format(float_tasks[0]["project_id"])
-                            
-                                        print(' result < 400 : ', channel)
-                                        self.slack_client.api_call(
-                                            "chat.postMessage",
-                                            channel=channel,
-                                            text=task_status_response
-                                        )
+                                        msg = ''
+                                        if sf_task['pse__Assigned_Resources__c'] != fl_user["name"]:
+                                            params["pse__Assigned_Resources__c"] = fl_user["name"]
+                                            params["pse__Assigned_Resources_Long__c"] = fl_user["name"]
+                                            msg = 'assigned resources'
+
+                                        if sf_task['pse__Start_Date_Time__c'] != start_datetime_obj or sf_task['pse__End_Date_Time__c'] != end_datetime_obj:
+                                            params['pse__Start_Date_Time__c'] = start_datetime_obj
+                                            params['pse__End_Date_Time__c'] = end_datetime_obj
+                                            msg = 'start & end time'
+
+                                        if len(params.keys()) > 0:
+                                            result = sf_project_task.update(sf_task["Id"], params, False)
+
+                                            task_status_response = ''
+                                            if result < 400:
+                                                self.number_of_success = self.number_of_success + 1
+                                                task_status_response = "Updated {} on TASK | project {}".format(msg, float_task["name"])
+                                                self.slack_client.api_call(
+                                                    "chat.postMessage",
+                                                    channel=channel,
+                                                    text=task_status_response
+                                                )
 
                     if self.number_of_success == 0:
                         response = "Couldn't find tasks in salesforce"
 
-                except:
-                    response = "There is something wrong when updating!"
+                except Exception as e:
+                    response = e.message
             else:
                 response = 'Session is incorrect or expired!'
 
-            print(' final : ', channel)
             # Sends the response back to the channel
             self.slack_client.api_call(
                 "chat.postMessage",
                 channel=channel,
-                text=response or default_response
+                text=response or 'Finished!'
             )
 
     def run(self):
-        if self.slack_client.rtm_connect(with_team_state=False, auto_reconnect=True):
+        if self.slack_client.rtm_connect(with_team_state=False):
             print("Starter Bot connected and running!")
             # Read bot's user ID by calling Web API method `auth.test`
             self.slack_client_id = self.slack_client.api_call("auth.test")["user_id"]
