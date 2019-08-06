@@ -196,7 +196,6 @@ class ScheduleBot:
             )
 
             session_id = command.replace(EXAMPLE_COMMAND, '').strip()
-            print(session_id)
             self.create_salesforce_instance(session_id)
 
             is_session_valid = True
@@ -213,49 +212,57 @@ class ScheduleBot:
 
                     projects = float_api.get_projects()
                     for project in projects:
-                        # float_tasks = float_api.test()
-                        float_tasks = float_api.get_tasks_by_params('project_id={}'.format(project["project_id"]))
+                        m = re.search(r'(?<=-)\d+', project["name"])
+                        if m is not None:
+                            print(project["name"])
+                            sf_project_id = m.group(0)
+                            # float_tasks = float_api.test()
+                            float_tasks = float_api.get_tasks_by_params('project_id={}'.format(project["project_id"]))
 
-                        if len(float_tasks) > 0:
-                            tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
-                            for tag in tags:
-                                if 'PR-' in tag:
-                                    sf_tasks = bot.test(tag)
+                            if len(float_tasks) > 0:
+                                tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
+                                for tag in tags:
+                                    if 'PR-' in tag:
+                                        sf_tasks = bot.test(sf_project_id)
 
-                            for float_task in float_tasks:
-                                fl_user = float_api.get_person_by_id(float_task["people_id"])
-                                for sf_task in sf_tasks:
-                                    # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
-                                    if float_task["name"] == sf_task["Name"]:
-                                        start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d')
-                                        end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d')
+                                for float_task in float_tasks:
+                                    fl_user = float_api.get_person_by_id(float_task["people_id"])
+                                    for sf_task in sf_tasks:
+                                        pdb.set_trace()
+                                        # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
+                                        if float_task["name"] == sf_task["Name"]:
+                                            start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d')
+                                            end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d')
 
-                                        start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S")
-                                        end_datetime_obj = eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
+                                            start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S")
+                                            end_datetime_obj = eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
 
-                                        msg = ''
-                                        if sf_task['pse__Assigned_Resources__c'] != fl_user["name"]:
-                                            params["pse__Assigned_Resources__c"] = fl_user["name"]
-                                            params["pse__Assigned_Resources_Long__c"] = fl_user["name"]
-                                            msg = 'assigned resources'
+                                            msg = ''
+                                            if sf_task['pse__Assigned_Resources__c'] != fl_user["name"]:
+                                                params["pse__Assigned_Resources__c"] = fl_user["name"]
+                                                params["pse__Assigned_Resources_Long__c"] = fl_user["name"]
+                                                msg = 'assigned resources '
 
-                                        if sf_task['pse__Start_Date_Time__c'] != start_datetime_obj or sf_task['pse__End_Date_Time__c'] != end_datetime_obj:
-                                            params['pse__Start_Date_Time__c'] = start_datetime_obj
-                                            params['pse__End_Date_Time__c'] = end_datetime_obj
-                                            msg = 'start & end time'
+                                            if sf_task['pse__Start_Date_Time__c'] != start_datetime_obj or sf_task['pse__End_Date_Time__c'] != end_datetime_obj:
+                                                params['pse__Start_Date_Time__c'] = start_datetime_obj
+                                                params['pse__End_Date_Time__c'] = end_datetime_obj
+                                                msg = 'start & end time '
 
-                                        if len(params.keys()) > 0:
-                                            result = sf_project_task.update(sf_task["Id"], params, False)
+                                            if len(params.keys()) > 0:
+                                                result = sf_project_task.update(sf_task["Id"], params, False)
 
-                                            task_status_response = ''
-                                            if result < 400:
-                                                self.number_of_success = self.number_of_success + 1
-                                                task_status_response = "Updated {} on TASK | project {}".format(msg, float_task["name"])
-                                                self.slack_client.api_call(
-                                                    "chat.postMessage",
-                                                    channel=channel,
-                                                    text=task_status_response
-                                                )
+                                                task_status_response = ''
+                                                if result < 400:
+                                                    self.number_of_success = self.number_of_success + 1
+                                                    task_status_response = "Updated {}on TASK | project {}".format(msg, float_task["name"])
+                                                    self.slack_client.api_call(
+                                                        "chat.postMessage",
+                                                        channel=channel,
+                                                        text=task_status_response
+                                                    )
+
+                        else:
+                            print("***********: ", project["name"])
 
                     if self.number_of_success == 0:
                         response = "Couldn't find tasks in salesforce"
