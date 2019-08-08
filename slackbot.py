@@ -193,7 +193,7 @@ class ScheduleBot:
             self.slack_client.api_call(
                 "chat.postMessage",
                 channel=channel,
-                text='Please, wait a moment...'
+                text='Please wait a moment...'
             )
 
             session_id = command.replace(EXAMPLE_COMMAND, '').strip()
@@ -252,7 +252,7 @@ class ScheduleBot:
                                                 task_status_response = ''
                                                 if result < 400:
                                                     self.number_of_success = self.number_of_success + 1
-                                                    task_status_response = "{} | project {}".format(msg, project["name"])
+                                                    task_status_response = "{} | project {}".format(float_task["name"], project["name"])
                                                     self.slack_client.api_call(
                                                         "chat.postMessage",
                                                         channel=channel,
