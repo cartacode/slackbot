@@ -193,7 +193,7 @@ class ScheduleBot:
             self.slack_client.api_call(
                 "chat.postMessage",
                 channel=channel,
-                text='wait for a moment, please'
+                text='Please, wait a moment...'
             )
 
             session_id = command.replace(EXAMPLE_COMMAND, '').strip()
@@ -241,8 +241,7 @@ class ScheduleBot:
                                                 params["pse__Assigned_Resources_Long__c"] = fl_user["name"]
                                                 msg = 'assigned resources '
 
-                                            if self.remove_delta(sf_task['pse__Start_Date_Time__c']) != start_datetime_obj or self.remove_delta(sf_task['pse__End_Date_Time__c']) != end_datetime_obj:
-                                                pdb.set_trace()
+                                            if self.remove_delta(sf_task['pse__Start_Date_Time__c']) != start_datetime_obj.decode() or self.remove_delta(sf_task['pse__End_Date_Time__c']) != end_datetime_obj.decode():
                                                 params['pse__Start_Date_Time__c'] = start_datetime_obj
                                                 params['pse__End_Date_Time__c'] = end_datetime_obj
                                                 msg = 'start & end time '
@@ -253,7 +252,7 @@ class ScheduleBot:
                                                 task_status_response = ''
                                                 if result < 400:
                                                     self.number_of_success = self.number_of_success + 1
-                                                    task_status_response = "Updated {}on TASK | project {}".format(msg, float_task["name"])
+                                                    task_status_response = "{} | project {}".format(msg, project["name"])
                                                     self.slack_client.api_call(
                                                         "chat.postMessage",
                                                         channel=channel,
@@ -353,9 +352,13 @@ class ScheduleBot:
         return time_val.replace('+0000', '').replace('.000', '')
 
 
+def remove_delta(time_val):
+    if time_val is None:
+        return time_val
+    return time_val.replace('+0000', '').replace('.000', '')
 
 if __name__ == "__main__":
-    session_id="00D30000001ICYF!AQ4AQAaO7YlcYekAu1ExZzu4y41l8qyQaPJ_M2x4wPuCoDyPW_QQzv03zn6L7MgRF1vDI6QAia31tVxHO9JPlAiFQwKNe2gk"
+    session_id="00D30000001ICYF!AQ4AQFqGuCniaBju5qf7LeyedAEtZXoyeXiMfqE4rwoo6qC82Mwfv0WMiSI_TzIrIhg1nuqrYmggUh5NDv6b_ag2HGE4S.8a"
     bot = ScheduleBot()
     bot.run()
 
@@ -367,23 +370,22 @@ if __name__ == "__main__":
     # projects = float_api.get_projects()
     # for project in projects:
     #     m = re.search(r'(?<=-)\d+', project["name"])
-    #     if m is not None:
-    #         sf_project_id = m.group(0)
-    #         print(sf_project_id)
-    #         # float_tasks = float_api.test()
-    #         if sf_project_id == "207405":
+    #     if project["name"] == 'PR-207534 - Harrisonburg ENT Associates':
+    #         if m is not None:
+    #             sf_project_id = m.group(0)
+    #             print(sf_project_id)
+    #             # if sf_project_id == '207405':
+    #             # float_tasks = float_api.test()
     #             float_tasks = float_api.get_tasks_by_params('project_id={}'.format(project["project_id"]))
 
     #             if len(float_tasks) > 0:
     #                 # tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
-    #                 sf_tasks = bot.test('PR-' + sf_project_id)                                      
-    #                 pdb.set_trace()
+    #                 sf_tasks = bot.test('PR-' + sf_project_id)
     #                 for float_task in float_tasks:
     #                     fl_user = float_api.get_person_by_id(float_task["people_id"])
     #                     for sf_task in sf_tasks:
     #                         # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
     #                         if float_task["name"] == sf_task["Name"]:
-    #                             pdb.set_trace()
     #                             start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d')
     #                             end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d')
 
@@ -392,20 +394,33 @@ if __name__ == "__main__":
 
     #                             msg = ''
     #                             params = {}
+    #                             print(float_task)
     #                             pdb.set_trace()
+    #                             print("compare source: ", sf_task['pse__Assigned_Resources__c'], fl_user["name"])
+    #                             # if sf_task['pse__Assigned_Resources__c'] != 'trt':
+    #                             #     params["pse__Assigned_Resources__c"] = 'trt'
+    #                             #     params["pse__Assigned_Resources_Long__c"] = 'trt'
+    #                             #     msg = 'assigned resources '
+
     #                             if sf_task['pse__Assigned_Resources__c'] != fl_user["name"]:
     #                                 params["pse__Assigned_Resources__c"] = fl_user["name"]
     #                                 params["pse__Assigned_Resources_Long__c"] = fl_user["name"]
     #                                 msg = 'assigned resources '
 
-    #                             if sf_task['pse__Start_Date_Time__c'] != start_datetime_obj or sf_task['pse__End_Date_Time__c'] != end_datetime_obj:
+    #                             print("compare time: ", remove_delta(sf_task['pse__Start_Date_Time__c']), start_datetime_obj)
+    #                             print("compare end time: ", sf_task['pse__End_Date_Time__c'], end_datetime_obj)
+    #                             print("\n")
+    #                             if remove_delta(sf_task['pse__Start_Date_Time__c']) != start_datetime_obj or remove_delta(sf_task['pse__End_Date_Time__c']) != end_datetime_obj:
     #                                 params['pse__Start_Date_Time__c'] = start_datetime_obj
     #                                 params['pse__End_Date_Time__c'] = end_datetime_obj
+    #                                 params["id"] = sf_task["Id"]
     #                                 msg = 'start & end time '
 
     #                             if len(params.keys()) > 0:
-    #                                 result = sf_project_task.update(sf_task["Id"], params, False)
-    #     else:
-    #         print(project["name"])
+    #                                 print(project["name"])
+    #                                 result = sf_project_task.upsert(sf_task["Id"], params, False)
+    #                                 print('result: ', result)
+    #         else:
+    #             print(project["name"])
 
     
