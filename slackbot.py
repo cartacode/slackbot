@@ -8,7 +8,6 @@ from simple_salesforce import Salesforce, SFType
 from slackclient import SlackClient
 from dotenv import load_dotenv
 import pytz
-import pdb
 
 eastern = pytz.timezone('US/Eastern')
 
@@ -298,7 +297,7 @@ class ScheduleBot:
                                                         )
 
                 except Exception as e:
-                    response = e.message
+                    pass
             else:
                 response = 'Session is incorrect or expired!'
 
@@ -315,10 +314,14 @@ class ScheduleBot:
             # Read bot's user ID by calling Web API method `auth.test`
             self.slack_client_id = self.slack_client.api_call("auth.test")["user_id"]
             while True:
-                command, channel = self.parse_bot_commands(self.slack_client.rtm_read())
-                if command:
-                    self.handle_command(command, channel)
-                time.sleep(RTM_READ_DELAY)
+                try:
+                    command, channel = self.parse_bot_commands(self.slack_client.rtm_read())
+                    if command:
+                        self.handle_command(command, channel)
+                    time.sleep(RTM_READ_DELAY)
+                except:
+                    self.slack_client.rtm_connect(with_team_state=False)
+                    self.slack_client_id = self.slack_client.api_call("auth.test")["user_id"]
         else:
             print("Connection failed. Exception traceback printed above.")
 
@@ -404,90 +407,3 @@ if __name__ == "__main__":
     session_id="00D30000001ICYF!AQ4AQFlYb9.tBFCrkx8R_iX8DwLWpJq6_cuIKehWjzcuxDzd2.lqiSrT6o24oIu5iK2Rd5x8KPGOEg0pXUCmoOJX0yh8aqPH"
     bot = ScheduleBot()
     bot.run()
-
-    # bot.create_salesforce_instance(session_id)
-    # sf_tasks = []       
-    # sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
-    # float_api = FloatAPI()
-
-    # projects = float_api.get_projects()
-    # for project in projects:
-    #     m = re.search(r'(?<=-)\d+', project["name"])
-    #     if m is not None:
-    #         sf_project_id = m.group(0)
-    #         if sf_project_id != "207534":
-    #             # float_tasks = float_api.test()
-    #             tmp_float_tasks = float_api.get_tasks_by_params(
-    #                                 'project_id={}'.format(project["project_id"])
-    #                             )
-
-    #             float_tasks = []
-    #             float_task_hash = {}
-    #             for tmp_task in tmp_float_tasks:
-    #                 tmp_user = float_api.get_person_by_id(tmp_task["people_id"])
-    #                 task_name = tmp_task["name"]
-    #                 if task_name not in float_task_hash:
-    #                     tmp_task["users"] = tmp_user["name"]
-    #                     float_task_hash[task_name] = tmp_task
-    #                     float_tasks.append(tmp_task)
-    #                 else:
-    #                     first_start_date =  datetime.strptime(
-    #                         float_task_hash[task_name]["start_date"],
-    #                         '%Y-%m-%d'
-    #                     ).strftime("%V")
-    #                     second_start_date = datetime.strptime(
-    #                         tmp_task["start_date"], '%Y-%m-%d'
-    #                         ).strftime("%V")
-
-    #                     if first_start_date == second_start_date:
-    #                         float_task_hash[task_name]["users"] = float_task_hash[task_name]["users"] + ', ' + tmp_user["name"]
-    #                     else:
-    #                         tmp_task["is_duplicate"] = True
-    #                         float_task_hash[task_name] = tmp_task
-    #                         float_tasks.append(tmp_task)
-
-    #             if len(float_tasks) > 0:
-    #                 # tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
-    #                 sf_tasks = bot.test('PR-'+sf_project_id)                                      
-
-    #                 for float_task_key in float_task_hash.keys():
-    #                     # fl_user = float_api.get_person_by_id(float_task["people_id"])
-    #                     float_task = float_task_hash[float_task_key]
-
-    #                     if 'is_duplicate' in float_task:
-    #                         print("#####: duplicate")
-    #                     else:
-    #                         for sf_task in sf_tasks:
-    #                             # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
-    #                             if float_task["name"] == sf_task["Name"]:
-    #                                 start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d')
-    #                                 end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d')
-
-    #                                 start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S")
-    #                                 end_datetime_obj = eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
-
-    #                                 msg = ''
-    #                                 params = {}
-    #                                 if sf_task['pse__Assigned_Resources__c'] != float_task["users"]:
-    #                                     params["pse__Assigned_Resources__c"] = float_task["users"]
-    #                                     params["pse__Assigned_Resources_Long__c"] = float_task["users"]
-    #                                     msg = 'assigned resources '
-
-    #                                     print("compare time: ", remove_delta(sf_task['pse__Start_Date_Time__c']), start_datetime_obj)
-    #                                     print("compare end time: ", sf_task['pse__End_Date_Time__c'], end_datetime_obj)
-    #                                     print("\n")
-    #                                     if remove_delta(sf_task['pse__Start_Date_Time__c']) != start_datetime_obj or remove_delta(sf_task['pse__End_Date_Time__c']) != end_datetime_obj:
-    #                                         params['pse__Start_Date_Time__c'] = start_datetime_obj
-    #                                         params['pse__End_Date_Time__c'] = end_datetime_obj
-    #                                         params["id"] = sf_task["Id"]
-    #                                         msg = 'start & end time '
-
-    #                                     print(sf_task["pse__Assigned_Resources__c"])
-    #                                     if len(params.keys()) > 0:
-    #                                         # pdb.set_trace()
-    #                                         # result = sf_project_task.upsert(sf_task["Id"], params, False)
-    #                                         print('result: ')
-    #         else:
-    #             print(project["name"])
-
-    
