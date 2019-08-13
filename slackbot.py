@@ -3,11 +3,14 @@ import requests
 from datetime import datetime
 import time
 import re
+import csv
 import pytz
+import dateutil.parser
 from simple_salesforce import Salesforce, SFType
 from slackclient import SlackClient
 from dotenv import load_dotenv
-import pytz
+from datetime import datetime, date, timedelta
+import pdb
 
 eastern = pytz.timezone('US/Eastern')
 
@@ -23,8 +26,20 @@ else:
 
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
 EXAMPLE_COMMAND = "sync"
+EXAMPLE_COMMANDs = ["sync", "report"]
 MENTION_REGEX = "^<@(|[WU].+?)>(.*)"
 
+def get_start_end_dates(year, week):
+    d = date(year,1,1)
+    if(d.weekday()<= 3):
+        d = d - timedelta(d.weekday())             
+    else:
+        d = d + timedelta(7-d.weekday())
+    dlt = timedelta(days = (week-1)*7)
+    return {
+        "start_datetime": d + dlt, 
+        "end_datetime": d + dlt + timedelta(days=6)
+    }
 
 class FloatAPI:
     """
@@ -104,6 +119,7 @@ class FloatAPI:
             Get tasks by parameters
             /tasks/?project_id=xxxxxx
         """
+        print("{}/tasks?{}".format(self.url, params))
         resp = requests.get("{}/tasks?{}".format(self.url, params),headers=self.base_headers)
 
         if resp.status_code < 400:
@@ -175,138 +191,36 @@ class ScheduleBot:
             Executes bot command if the command is known
         """
         # Default response is help text for the user
-        default_response = "Not sure what you mean. Try *{}*.".format(EXAMPLE_COMMAND)
+        default_response = "Not sure what you mean. Try *{}*.".format("sync or report")
 
         # Finds and executes the given command, filling in response
         response = None
 
-        if not command.startswith(EXAMPLE_COMMAND):
+        is_command_syntax_correct = False
+        for example_command in EXAMPLE_COMMANDs:
+            if command.startswith(example_command):
+                is_command_syntax_correct = True
+
+        if is_command_syntax_correct == False:
             self.slack_client.api_call(
                 "chat.postMessage",
                 channel=channel,
                 text=default_response
             )
-        # This is where you start to implement more commands!
-        if command.startswith(EXAMPLE_COMMAND):
-            print(' start command : ', channel)
-            self.slack_client.api_call(
-                "chat.postMessage",
-                channel=channel,
-                text='Please wait a moment...'
-            )
-
-            session_id = command.replace(EXAMPLE_COMMAND, '').strip()
-            self.create_salesforce_instance(session_id)
-
-            is_session_valid = True
-            try:
-                self.sf.query_more("/services/data/v37.0/sobjects/", True)
-            except:
-                is_session_valid = False
-
-            if is_session_valid:
-                try:
-                    sf_tasks = []       
-                    sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
-                    float_api = FloatAPI()
-
-                    projects = float_api.get_projects()
-                    for project in projects:
-                        m = re.search(r'(?<=-)\d+', project["name"])
-                        if m is not None:
-                            sf_project_id = m.group(0)
-                            # float_tasks = float_api.test()
-                            tmp_float_tasks = float_api.get_tasks_by_params(
-                                                'project_id={}'.format(project["project_id"])
-                                            )
-
-                            float_tasks = []
-                            float_task_hash = {}
-                            for tmp_task in tmp_float_tasks:
-                                tmp_user = float_api.get_person_by_id(tmp_task["people_id"])
-                                task_name = tmp_task["name"]
-                                if task_name not in float_task_hash:
-                                    tmp_task["users"] = self.format_username(tmp_user["name"])
-                                    float_task_hash[task_name] = tmp_task
-                                    float_tasks.append(tmp_task)
-                                else:
-                                    first_start_date =  datetime.strptime(
-                                        float_task_hash[task_name]["start_date"],
-                                        '%Y-%m-%d'
-                                    ).strftime("%V")
-                                    second_start_date = datetime.strptime(
-                                        tmp_task["start_date"], '%Y-%m-%d'
-                                        ).strftime("%V")
-
-                                    if first_start_date == second_start_date:
-                                        float_task_hash[task_name]["users"] = self.format_username(float_task_hash[task_name]["users"]) + ', ' + self.format_username(tmp_user["name"])
-                                    else:
-                                        tmp_task["is_duplicaate"] = True
-                                        float_task_hash[task_name] = tmp_task
-                                        float_tasks.append(tmp_task)
-
-                            if len(float_tasks) > 0:
-                                # tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
-                                sf_tasks = bot.test('PR-'+sf_project_id)                                      
-
-                                for float_task_key in float_task_hash.keys():
-                                    # fl_user = float_api.get_person_by_id(float_task["people_id"])
-                                    float_task = float_task_hash[float_task_key]
-                                    if 'is_duplicate' in float_task:
-                                        self.slack_client.api_call(
-                                            "chat.postMessage",
-                                            channel=channel,
-                                            text='Project has two tasks. Please manually sync the second in Salesforce, or use a different task name'
-                                        )
-                                    else:
-                                        for sf_task in sf_tasks:
-                                            # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
-                                            if float_task["name"] == sf_task["Name"]:
-                                                start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d')
-                                                end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d')
-
-                                                start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S")
-                                                end_datetime_obj = eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
-
-                                                msg = ''
-                                                params = {}
-                                                if sf_task['pse__Assigned_Resources__c'] != float_task["users"]:
-                                                    params["pse__Assigned_Resources__c"] = float_task["users"]
-                                                    params["pse__Assigned_Resources_Long__c"] = float_task["users"]
-                                                    msg = 'assigned resources '
-
-                                                if self.remove_delta(sf_task['pse__Start_Date_Time__c']) != start_datetime_obj.decode() or self.remove_delta(sf_task['pse__End_Date_Time__c']) != end_datetime_obj.decode():
-                                                    params['pse__Start_Date_Time__c'] = start_datetime_obj
-                                                    params['pse__End_Date_Time__c'] = end_datetime_obj
-                                                    msg = 'start & end time '
-
-                                                if len(params.keys()) > 0:
-                                                    result = sf_project_task.update(sf_task["Id"], params, False)
-
-                                                    task_status_response = ''
-                                                    if result < 400:
-                                                        self.number_of_success = self.number_of_success + 1
-                                                        task_status_response = "{} | {} | project {}".format(
-                                                            msg,
-                                                            float_task["name"],
-                                                            project["name"])
-                                                        self.slack_client.api_call(
-                                                            "chat.postMessage",
-                                                            channel=channel,
-                                                            text=task_status_response
-                                                        )
-
-                except Exception as e:
-                    pass
+        else:
+            # This is where you start to implement more commands!
+            command_args = command.split(" ")
+            if command_args[0] == u'report':
+                self.get_tasks_by_weeks(channel)
+                self.slack_client.api_call(
+                    "chat.postMessage",
+                    channel=channel,
+                    text=response or 'Upload Finished!'
+                )
             else:
-                response = 'Session is incorrect or expired!'
-
-            # Sends the response back to the channel
-            self.slack_client.api_call(
-                "chat.postMessage",
-                channel=channel,
-                text=response or 'Finished!'
-            )
+                session_id = command_args[1]
+                self.create_salesforce_instance(session_id)
+                self.sync_tasks(channel)
 
     def run(self):
         if self.slack_client.rtm_connect(with_team_state=False):
@@ -325,24 +239,122 @@ class ScheduleBot:
         else:
             print("Connection failed. Exception traceback printed above.")
 
-    def test(self, project_id):
-        sobject = self.sf.query_more("/services/data/v38.0/sobjects/pse__Proj__c", True)
-        projects = sobject["recentItems"]
-        tasks = []
+    def sync_tasks(self, channel):
+        self.slack_client.api_call(
+            "chat.postMessage",
+            channel=channel,
+            text='Please wait a moment...'
+        )
 
-        milestone_obj = self.get_milestone_id(project_id)
-        if milestone_obj is not None:
+        is_session_valid = True
+        try:
+            self.sf.query_more("/services/data/v37.0/sobjects/", True)
+        except:
+            is_session_valid = False
 
-            sf_tasks = self.get_task_by_milestone_and_product(
-                milestone_obj['project_id'],
-                milestone_obj['milestone_id']
-            )
+        if is_session_valid:
+            try:
+                sf_tasks = []       
+                sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
+                float_api = FloatAPI()
 
-            for task in sf_tasks:
-                formatted_task = self.get_detail_task(task["attributes"]["url"])
-                tasks.append(formatted_task)
-        
-        return tasks
+                projects = float_api.get_projects()
+                for project in projects:
+                    m = re.search(r'(?<=-)\d+', project["name"])
+                    if m is not None:
+                        sf_project_id = m.group(0)
+                        # float_tasks = float_api.test()
+                        tmp_float_tasks = float_api.get_tasks_by_params(
+                                            'project_id={}'.format(project["project_id"])
+                                        )
+
+                        float_tasks = []
+                        float_task_hash = {}
+                        for tmp_task in tmp_float_tasks:
+                            tmp_user = float_api.get_person_by_id(tmp_task["people_id"])
+                            task_name = tmp_task["name"]
+                            if task_name not in float_task_hash:
+                                tmp_task["users"] = self.format_username(tmp_user["name"])
+                                float_task_hash[task_name] = tmp_task
+                                float_tasks.append(tmp_task)
+                            else:
+                                first_start_date =  datetime.strptime(
+                                    float_task_hash[task_name]["start_date"],
+                                    '%Y-%m-%d'
+                                ).strftime("%V")
+                                second_start_date = datetime.strptime(
+                                    tmp_task["start_date"], '%Y-%m-%d'
+                                    ).strftime("%V")
+
+                                if first_start_date == second_start_date:
+                                    float_task_hash[task_name]["users"] = self.format_username(float_task_hash[task_name]["users"]) + ', ' + self.format_username(tmp_user["name"])
+                                else:
+                                    tmp_task["is_duplicaate"] = True
+                                    float_task_hash[task_name] = tmp_task
+                                    float_tasks.append(tmp_task)
+
+                        if len(float_tasks) > 0:
+                            # tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
+                            sf_tasks = bot.test('PR-'+sf_project_id)                                      
+
+                            for float_task_key in float_task_hash.keys():
+                                # fl_user = float_api.get_person_by_id(float_task["people_id"])
+                                float_task = float_task_hash[float_task_key]
+                                if 'is_duplicate' in float_task:
+                                    self.slack_client.api_call(
+                                        "chat.postMessage",
+                                        channel=channel,
+                                        text='Project has two tasks. Please manually sync the second in Salesforce, or use a different task name'
+                                    )
+                                else:
+                                    for sf_task in sf_tasks:
+                                        # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
+                                        if float_task["name"] == sf_task["Name"]:
+                                            start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d')
+                                            end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d')
+
+                                            start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S")
+                                            end_datetime_obj = eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
+
+                                            msg = ''
+                                            params = {}
+                                            if sf_task['pse__Assigned_Resources__c'] != float_task["users"]:
+                                                params["pse__Assigned_Resources__c"] = float_task["users"]
+                                                params["pse__Assigned_Resources_Long__c"] = float_task["users"]
+                                                msg = 'assigned resources '
+
+                                            if self.remove_delta(sf_task['pse__Start_Date_Time__c']) != start_datetime_obj.decode() or self.remove_delta(sf_task['pse__End_Date_Time__c']) != end_datetime_obj.decode():
+                                                params['pse__Start_Date_Time__c'] = start_datetime_obj
+                                                params['pse__End_Date_Time__c'] = end_datetime_obj
+                                                msg = 'start & end time '
+
+                                            if len(params.keys()) > 0:
+                                                result = sf_project_task.update(sf_task["Id"], params, False)
+
+                                                task_status_response = ''
+                                                if result < 400:
+                                                    self.number_of_success = self.number_of_success + 1
+                                                    task_status_response = "{} | {} | project {}".format(
+                                                        msg,
+                                                        float_task["name"],
+                                                        project["name"])
+                                                    self.slack_client.api_call(
+                                                        "chat.postMessage",
+                                                        channel=channel,
+                                                        text=task_status_response
+                                                    )
+
+            except Exception as e:
+                pass
+        else:
+            response = 'Session is incorrect or expired!'
+
+        # Sends the response back to the channel
+        self.slack_client.api_call(
+            "chat.postMessage",
+            channel=channel,
+            text=response or 'Finished!'
+        )
     
     def get_detail_task(self, task_url):
         sobject = self.sf.query_more(task_url, True)
@@ -397,13 +409,120 @@ class ScheduleBot:
             return None
         return val.split("-")[0].strip()
 
+    def upload(self, file, channel):
+        try:
+            with open(file) as file_content:
+                res = self.slack_client.api_call(
+                        "files.upload",
+                        channels=channel,
+                        file=file_content,
+                        title="Test upload"
+                    )
 
-def remove_delta(time_val):
-    if time_val is None:
-        return time_val
-    return time_val.replace('+0000', '').replace('.000', '')
+                file_content.close()
+        except Exception as e:
+            self.slack_client.api_call(
+                "chat.postMessage",
+                channel=channel,
+                text=e.message
+            )
+
+        return True
+
+    def get_tasks_by_weeks(self, channel):
+        float_api = FloatAPI()
+        report_schedules = []
+        fieldnames = [
+            "on_vocation",
+            "in_training_for_teaching",
+            "in_training_for_learning",
+            "onsite_go_live",
+            "onsite_setup",
+            "remote_training"
+        ]
+
+        # create csv file with header
+        with open('report.csv', 'w') as csv_file:
+            writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+            writer.writeheader()
+
+        year = datetime.now().strftime("%Y")
+        month = datetime.now().strftime("%m")
+        next_month = datetime.now() + dateutil.relativedelta.relativedelta(months=1)
+
+        start_next_month = datetime.strptime(
+            '{}-{}-1'.format(year, next_month.strftime("%m")),
+            '%Y-%m-%d'
+        )
+        start_date_of_month = datetime.strptime(
+            '{}-{}-1'.format(year, month),
+            '%Y-%m-%d'
+        )
+
+        last_date_of_month = start_next_month  - timedelta(days=1)
+        start_weeknum = start_date_of_month.strftime("%V")
+        end_weeknum = last_date_of_month.strftime("%V")
+
+        for week_num in range(int(start_weeknum), int(end_weeknum)):
+            date_obj = get_start_end_dates(2019, week_num)
+            start_date = date_obj["start_datetime"].strftime("%Y-%m-%d")
+            end_date = date_obj["end_datetime"].strftime("%Y-%m-%d")
+
+            schedule_tasks = float_api.get_tasks_by_params(
+                'start_date={}&end_date={}'.format(start_date, end_date)
+            )
+            if len(schedule_tasks) > 0:
+                with open('report.csv', 'a') as csv_file:
+                    writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+
+                    report_schedule = {
+                        "on_vocation": 0,
+                        "in_training_for_teaching": 0,
+                        "in_training_for_learning": 0,
+                        "onsite_go_live": 0,
+                        "onsite_setup": 0,
+                        "remote_training": 0
+                    }
+
+                    for schedule_task in schedule_tasks:
+                        if "paid time off" in schedule_task["name"].lower():
+                            report_schedule["on_vocation"] = report_schedule["on_vocation"] + 1
+
+                        if "one on one" in schedule_task["name"].lower():
+                            project_item = float_api.get_project_by_id(schedule_task["project_id"])
+                            if project_item["notes"] is not None:
+                                if "trainer" in project_item["name"].lower():
+                                    report_schedule["in_training_for_teaching"] = report_schedule["in_training_for_teaching"] + 1
+                                if "trainee" in project_item["name"].lower():
+                                    report_schedule["in_training_for_learning"] = report_schedule["in_training_for_learning"] + 1
+
+                        if "remote enduser" in schedule_task["name"].lower():
+                            report_schedule["remote_training"] = report_schedule["remote_training"] + 1
+
+                        if "enduser" in schedule_task["name"].lower():
+                            report_schedule["onsite_setup"] = report_schedule["onsite_setup"] + 1
+                    
+                        if "go live" in schedule_task["name"].lower():
+                            report_schedule["onsite_go_live"] = report_schedule["onsite_go_live"] + 1
+
+                    self.slack_client.api_call(
+                        "chat.postMessage",
+                        channel=channel,
+                        text='Get tasks: {} ~ {}'.format(start_date, end_date)
+                    )
+                    writer.writerow({
+                        "on_vocation": report_schedule["on_vocation"],
+                        "in_training_for_teaching": report_schedule["in_training_for_teaching"],
+                        "in_training_for_learning": report_schedule["in_training_for_learning"],
+                        "onsite_go_live": report_schedule["onsite_go_live"],
+                        "onsite_setup": report_schedule["onsite_setup"],
+                        "remote_training": report_schedule["remote_training"],
+                    })
+                    csv_file.close()
+
+        self.upload('report.csv', channel)
+
 
 if __name__ == "__main__":
-    session_id="00D30000001ICYF!AQ4AQFlYb9.tBFCrkx8R_iX8DwLWpJq6_cuIKehWjzcuxDzd2.lqiSrT6o24oIu5iK2Rd5x8KPGOEg0pXUCmoOJX0yh8aqPH"
     bot = ScheduleBot()
     bot.run()
