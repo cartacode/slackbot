@@ -433,6 +433,7 @@ class ScheduleBot:
         float_api = FloatAPI()
         report_schedules = []
         fieldnames = [
+            "start_date",
             "on_vocation",
             "in_training_for_teaching",
             "in_training_for_learning",
@@ -448,14 +449,15 @@ class ScheduleBot:
 
         year = datetime.now().strftime("%Y")
         month = datetime.now().strftime("%m")
-        next_month = datetime.now() + dateutil.relativedelta.relativedelta(months=1)
+        next_month = datetime.now() + dateutil.relativedelta.relativedelta(months=2)
+        before_month = datetime.now() - dateutil.relativedelta.relativedelta(months=1)
 
         start_next_month = datetime.strptime(
             '{}-{}-1'.format(year, next_month.strftime("%m")),
             '%Y-%m-%d'
         )
         start_date_of_month = datetime.strptime(
-            '{}-{}-1'.format(year, month),
+            '{}-{}-1'.format(year, before_month.strftime("%m")),
             '%Y-%m-%d'
         )
 
@@ -476,6 +478,7 @@ class ScheduleBot:
                     writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
 
                     report_schedule = {
+                        "start_date": start_date,
                         "on_vocation": 0,
                         "in_training_for_teaching": 0,
                         "in_training_for_learning": 0,
@@ -490,7 +493,7 @@ class ScheduleBot:
 
                         if "one on one" in schedule_task["name"].lower():
                             project_item = float_api.get_project_by_id(schedule_task["project_id"])
-                            if project_item["notes"] is not None:
+                            if project_item["name"] is not None:
                                 if "trainer" in project_item["name"].lower():
                                     report_schedule["in_training_for_teaching"] = report_schedule["in_training_for_teaching"] + 1
                                 if "trainee" in project_item["name"].lower():
@@ -511,6 +514,7 @@ class ScheduleBot:
                         text='Get tasks: {} ~ {}'.format(start_date, end_date)
                     )
                     writer.writerow({
+                        "start_date": report_schedule["start_date"],
                         "on_vocation": report_schedule["on_vocation"],
                         "in_training_for_teaching": report_schedule["in_training_for_teaching"],
                         "in_training_for_learning": report_schedule["in_training_for_learning"],
