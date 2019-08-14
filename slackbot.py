@@ -273,9 +273,10 @@ class ScheduleBot:
                         for tmp_task in tmp_float_tasks:
                             tmp_user = float_api.get_person_by_id(tmp_task["people_id"])
                             task_name = tmp_task["name"]
+                            tmp_task["users"] = self.format_username(tmp_user["name"])
                             if task_name not in float_task_hash:
-                                tmp_task["users"] = self.format_username(tmp_user["name"])
                                 float_task_hash[task_name] = tmp_task
+                                print("float_tasks added")
                                 float_tasks.append(tmp_task)
                             else:
                                 first_start_date =  datetime.strptime(
@@ -288,14 +289,17 @@ class ScheduleBot:
 
                                 if first_start_date == second_start_date:
                                     float_task_hash[task_name]["users"] = self.format_username(float_task_hash[task_name]["users"]) + ', ' + self.format_username(tmp_user["name"])
+                                    print(float_task_hash)
                                 else:
-                                    tmp_task["is_duplicaate"] = True
+                                    tmp_task["is_duplicate"] = True
                                     float_task_hash[task_name] = tmp_task
+                                    print("float_tasks added duplicated")
                                     float_tasks.append(tmp_task)
 
+                        print("float_tasks: ", float_tasks)
                         if len(float_tasks) > 0:
                             # tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
-                            sf_tasks = bot.test('PR-'+sf_project_id)                                      
+                            sf_tasks = self.get_tasks_by_project_id('PR-'+sf_project_id)                                      
                             for float_task_key in float_task_hash.keys():
                                 # fl_user = float_api.get_person_by_id(float_task["people_id"])
                                 float_task = float_task_hash[float_task_key]
@@ -303,11 +307,12 @@ class ScheduleBot:
                                     self.slack_client.api_call(
                                         "chat.postMessage",
                                         channel=channel,
-                                        text='Project has two tasks. Please manually sync the second in Salesforce, or use a different task name'
+                                        text="Project: {} has two tasks. "\
+                                            "Please manually sync the second in Salesforce, "\
+                                            "or use a different task name".format(project["name"])
                                     )
                                 else:
                                     for sf_task in sf_tasks:
-                                        # if float_task["name"] == 'Go Live' and  sf_task["Name"] == 'Onsite Go Live':
                                         if float_task["name"] == sf_task["Name"]:
                                             start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d')
                                             end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d')
@@ -344,7 +349,11 @@ class ScheduleBot:
                                                     )
 
             except Exception as e:
-                pass
+                self.slack_client.api_call(
+                    "chat.postMessage",
+                    channel=channel,
+                    text=e.message
+                )
         else:
             response = 'Session is incorrect or expired!'
 
@@ -354,6 +363,26 @@ class ScheduleBot:
             channel=channel,
             text=response or 'Finished!'
         )
+
+    def get_tasks_by_project_id(self, project_id):
+        sobject = self.sf.query_more("/services/data/v38.0/sobjects/pse__Proj__c", True)
+        projects = sobject["recentItems"]
+        tasks = []
+
+        milestone_obj = self.get_milestone_id(project_id)
+        if milestone_obj is not None:
+
+            sf_tasks = self.get_task_by_milestone_and_product(
+                milestone_obj['project_id'],
+                milestone_obj['milestone_id']
+            )
+
+            for task in sf_tasks:
+                formatted_task = self.get_detail_task(task["attributes"]["url"])
+                tasks.append(formatted_task)
+        
+        return tasks
+
     
     def get_detail_task(self, task_url):
         sobject = self.sf.query_more(task_url, True)
