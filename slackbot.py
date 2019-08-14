@@ -119,7 +119,6 @@ class FloatAPI:
             Get tasks by parameters
             /tasks/?project_id=xxxxxx
         """
-        print("{}/tasks?{}".format(self.url, params))
         resp = requests.get("{}/tasks?{}".format(self.url, params),headers=self.base_headers)
 
         if resp.status_code < 400:
@@ -155,6 +154,7 @@ class ScheduleBot:
         self.number_of_success = 0
 
     def create_salesforce_instance(self, session_id):
+        self.session_id = session_id
         self.sf = Salesforce(instance=SALESFORCE_URL, session_id=session_id)
 
     def set_project_table_name(self):
@@ -254,8 +254,8 @@ class ScheduleBot:
 
         if is_session_valid:
             try:
-                sf_tasks = []       
-                sf_project_task = SFType('pse__Project_Task__c', session_id, SALESFORCE_URL)
+                sf_tasks = []
+                sf_project_task = SFType('pse__Project_Task__c', self.session_id, SALESFORCE_URL)
                 float_api = FloatAPI()
 
                 projects = float_api.get_projects()
@@ -296,7 +296,6 @@ class ScheduleBot:
                         if len(float_tasks) > 0:
                             # tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
                             sf_tasks = bot.test('PR-'+sf_project_id)                                      
-
                             for float_task_key in float_task_hash.keys():
                                 # fl_user = float_api.get_person_by_id(float_task["people_id"])
                                 float_task = float_task_hash[float_task_key]
