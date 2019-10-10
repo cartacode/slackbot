@@ -259,7 +259,7 @@ class ScheduleBot:
             is_session_valid = False
 
         test_limit = 0
-        if is_session_valid and test_limit < 5:
+        if is_session_valid and test_limit < 4:
             try:
                 sf_tasks = []
                 sf_project_task = SFType('pse__Project_Task__c', self.session_id, SALESFORCE_URL)
