@@ -259,11 +259,12 @@ class ScheduleBot:
             is_session_valid = False
 
         test_limit = 0
-        if is_session_valid and test_limit < 4:
+        ton = False
+        if not is_session_valid and test_limit < 10:
             try:
                 sf_tasks = []
-                sf_project_task = SFType('pse__Project_Task__c', self.session_id, SALESFORCE_URL)
-                sf_project_task_assign = SFType('pse__Project_Task_Assignment__c', self.session_id, SALESFORCE_URL)
+                # sf_project_task = SFType('pse__Project_Task__c', self.session_id, SALESFORCE_URL)
+                # sf_project_task_assign = SFType('pse__Project_Task_Assignment__c', self.session_id, SALESFORCE_URL)
                 float_api = FloatAPI()
 
                 projects = float_api.get_projects()
@@ -280,28 +281,33 @@ class ScheduleBot:
                         float_task_hash = {}
                         for tmp_task in tmp_float_tasks:
                             tmp_user = float_api.get_person_by_id(tmp_task["people_id"])
-                            task_name = tmp_task["name"]
-                            tmp_task["users"] = self.format_username(tmp_user["name"])
-                            if task_name not in float_task_hash:
-                                float_task_hash[task_name] = tmp_task
-                                float_tasks.append(tmp_task)
-                            else:
-                                first_start_date =  datetime.strptime(
-                                    float_task_hash[task_name]["start_date"],
-                                    '%Y-%m-%d'
-                                ).strftime("%V")
-                                second_start_date = datetime.strptime(
-                                    tmp_task["start_date"], '%Y-%m-%d'
-                                    ).strftime("%V")
-
-                                if first_start_date == second_start_date:
-                                    float_task_hash[task_name]["users"] = self.format_username(float_task_hash[task_name]["users"]) + ', ' + self.format_username(tmp_user["name"])
-                                else:
-                                    tmp_task["is_duplicate"] = True
+                            task_name = tmp_task["task_id"]
+                            if tmp_user['active'] == 1:
+                                tmp_task["users"] = self.format_username(tmp_user["name"])
+                                if task_name not in float_task_hash:
                                     float_task_hash[task_name] = tmp_task
                                     float_tasks.append(tmp_task)
+                            # else:
+                            #     first_start_date =  datetime.strptime(
+                            #         float_task_hash[task_name]["start_date"],
+                            #         '%Y-%m-%d'
+                            #     ).strftime("%V")
+                            #     second_start_date = datetime.strptime(
+                            #         tmp_task["start_date"], '%Y-%m-%d'
+                            #         ).strftime("%V")
 
+                            #     if first_start_date == second_start_date:
+                            #         float_task_hash[task_name]["users"] = self.format_username(float_task_hash[task_name]["users"]) + ', ' + self.format_username(tmp_user["name"])
+                            #     else:
+                            #         tmp_task["is_duplicate"] = True
+                            #         float_task_hash[task_name] = tmp_task
+                            #         float_tasks.append(tmp_task)
                         if len(float_tasks) > 0:
+                            if 'PR-207534' in project["name"]:
+                            import pdb
+                            pdb.set_trace()
+
+                        if len(float_tasks) > 0 and ton is True:
                             # tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
                             sf_tasks = self.get_tasks_by_project_id('PR-'+sf_project_id)                                      
                             for float_task_key in float_task_hash.keys():
@@ -320,78 +326,93 @@ class ScheduleBot:
                                             "or use a different task name".format(project["name"])
                                     )
                                 else:
-                                    for sf_task in sf_tasks:
-                                        if float_task["name"] == sf_task["Name"]:
-                                            start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d')
-                                            end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d')
+                                    if 'PR-207534' in project["name"]:
+                                        for sf_task in sf_tasks:
+                                            if float_task["name"] == sf_task["Name"]:
+                                                start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d') + timedelta(days=1)
+                                                end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d') + timedelta(days=1)
 
-                                            start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S")
-                                            end_datetime_obj = eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
+                                                start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S")
+                                                end_datetime_obj = eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
 
-                                            float_names = float_task["users"].replace('*', '').split(',')
-                                            contacts_num = len(float_names)
-                                            for username in float_names:
-                                                float_username = username.strip()
-                                                msg = ''
-                                                params = {}
-                                                # if sf_task['pse__Assigned_Resources__c'] != float_task["users"]:
-                                                params["pse__Assigned_Resources__c"] = float_username
-                                                params["pse__Assigned_Resources_Long__c"] = float_username
-                                                msg = 'assigned resources '
+                                                float_names = float_task["users"].replace('*', '').split(',')
+                                                contacts_num = len(float_names)
+                                                for username in float_names:
+                                                    float_username = username.strip()
+                                                    msg = ''
+                                                    params = {}
+                                                    # if sf_task['pse__Assigned_Resources__c'] != float_task["users"]:
+                                                    params["pse__Assigned_Resources__c"] = float_username
+                                                    params["pse__Assigned_Resources_Long__c"] = float_username
+                                                    msg = 'assigned resources '
 
-                                                # if self.remove_delta(sf_task['pse__Start_Date_Time__c']) != start_datetime_obj.decode() or self.remove_delta(sf_task['pse__End_Date_Time__c']) != end_datetime_obj.decode():
-                                                params['pse__Start_Date_Time__c'] = start_datetime_obj
-                                                params['pse__End_Date_Time__c'] = end_datetime_obj
-                                                msg = 'start & end time '
+                                                    # if self.remove_delta(sf_task['pse__Start_Date_Time__c']) != start_datetime_obj.decode() or self.remove_delta(sf_task['pse__End_Date_Time__c']) != end_datetime_obj.decode():
+                                                    params['pse__Start_Date_Time__c'] = start_datetime_obj
+                                                    params['pse__End_Date_Time__c'] = end_datetime_obj
+                                                    msg = 'start & end time '
 
-                                                contact_info = self.get_contact_id(float_username)
-                                                d_project_task_asssign = {}
-                                                if contact_info is not None:
-                                                    if contact_info['is_active']:
-                                                        d_project_task_asssign['pse__Resource__c'] = contact_info['Id']
-                                                        d_project_task_asssign['resource_lookup__c'] = contact_info['Id']
-                                                    else:
-                                                        d_project_task_asssign['pse__External_Resource__c'] = contact_info['Id']
-
-                                                    try:
-                                                        result = sf_project_task.update(sf_task["Id"], params, False)
-                                                        te_status = self.task_exist_in_assignment(sf_task["Id"])
-                                                        if te_status['is_exist']:
-                                                            if contact_info['is_active']:
-                                                                resource_id = contact_info['Id']
-                                                            else:
-                                                                resource_id = d_project_task_asssign['pse__External_Resource__c']
-                                                            if resource_id != te_status['resource_id']:
-                                                                # pdb.set_trace()
-                                                                ta_result = sf_project_task_assign.update(te_status['Id'], d_project_task_asssign, False)
+                                                    contact_info = self.get_contact_id(float_username)
+                                                    d_project_task_asssign = {}
+                                                    if contact_info is not None:
+                                                        if contact_info['is_active']:
+                                                            d_project_task_asssign['pse__Resource__c'] = contact_info['Id']
+                                                            d_project_task_asssign['resource_lookup__c'] = contact_info['Id']
                                                         else:
-                                                            # pdb.set_trace()
-                                                            d_project_task_asssign['pse__Project_Task__c'] = sf_task['Id']
-                                                            # d_project_task_asssign['pse__Project_ID__c'] = sf_task['Project_ID__c']
-                                                            ta_result = sf_project_task_assign.create(d_project_task_asssign, False)
-                                                        test_limit = test_limit + 1
+                                                            d_project_task_asssign['pse__External_Resource__c'] = contact_info['Id']
 
-                                                        task_status_response = ''
-                                                        if result < 400:
-                                                            self.number_of_success = self.number_of_success + 1
-                                                            task_status_response = "{} | {} | project {}".format(
-                                                                msg,
-                                                                float_task["name"],
-                                                                project["name"])
-                                                            self.slack_client.api_call(
-                                                                "chat.postMessage",
-                                                                channel=channel,
-                                                                text=task_status_response
-                                                            )
-                                                    except Exception as e:
-                                                        print(e)
-                                                        continue
-                                                else:
-                                                    self.slack_client.api_call(
-                                                        "chat.postMessage",
-                                                        channel=channel,
-                                                        text='Contact: {} doesn\'t exist'.format(float_username) 
-                                                    )
+                                                        try:
+                                                            result = sf_project_task.update(sf_task["Id"], params, False)
+                                                            te_status = self.task_exist_in_assignment(sf_task["Id"])
+                                                            ta_result = None
+                                                            if te_status['is_exist']:
+                                                                if contact_info['is_active']:
+                                                                    resource_id = contact_info['Id']
+                                                                else:
+                                                                    resource_id = d_project_task_asssign['pse__External_Resource__c']
+                                                                if resource_id != te_status['resource_id']:
+                                                                    pdb.set_trace()
+                                                                    # try:
+                                                                    #     ta_result = sf_project_task_assign.update(te_status['Id'], d_project_task_asssign, False)
+                                                                    # except:
+                                                                    #     print(project['name'], float_username, "##########")
+                                                                    #     task_status_response = "{}: {} | {} | project {}".format(
+                                                                    #         float_username,
+                                                                    #         'User with same role is already assgined',
+                                                                    #         float_task["name"],
+                                                                    #         project["name"])
+                                                                    #     self.slack_client.api_call(
+                                                                    #         "chat.postMessage",
+                                                                    #         channel=channel,
+                                                                    #         text=task_status_response
+                                                                    #     )
+                                                            else:
+                                                                # pdb.set_trace()
+                                                                d_project_task_asssign['pse__Project_Task__c'] = sf_task['Id']
+                                                                # d_project_task_asssign['pse__Project_ID__c'] = sf_task['Project_ID__c']
+                                                                # ta_result = sf_project_task_assign.create(d_project_task_asssign, False)
+                                                            test_limit = test_limit + 1
+
+                                                            task_status_response = ''
+                                                            if result < 400 and ta_result is not None:
+                                                                self.number_of_success = self.number_of_success + 1
+                                                                task_status_response = "{} | {} | project {}".format(
+                                                                    msg,
+                                                                    float_task["name"],
+                                                                    project["name"])
+                                                                self.slack_client.api_call(
+                                                                    "chat.postMessage",
+                                                                    channel=channel,
+                                                                    text=task_status_response
+                                                                )
+                                                        except Exception as e:
+                                                            print(e)
+                                                            continue
+                                                    else:
+                                                        self.slack_client.api_call(
+                                                            "chat.postMessage",
+                                                            channel=channel,
+                                                            text='Contact: {} doesn\'t exist'.format(float_username) 
+                                                        )
 
             except Exception as e:
                 self.slack_client.api_call(
