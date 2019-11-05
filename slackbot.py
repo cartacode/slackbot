@@ -284,11 +284,8 @@ class ScheduleBot:
             is_session_valid = False
 
         test_limit = 0
-        print(is_session_valid)
-        import pdb
-        pdb.set_trace()
-        ton = False
-        if is_session_valid and test_limit < 10 and ton == True:
+
+        if is_session_valid and test_limit < 10:
             try:
                 sf_tasks = []
                 sf_project_task = SFType('pse__Project_Task__c', self.session_id, SALESFORCE_URL)
@@ -518,13 +515,11 @@ class ScheduleBot:
                 self.upload('download.csv', channel)
 
         except Exception as e:
-            print (e)
-            pdb.set_trace()
-        #     self.slack_client.api_call(
-        #         "chat.postMessage",
-        #         channel=channel,
-        #         text=e.message
-        #     )
+            self.slack_client.api_call(
+                "chat.postMessage",
+                channel=channel,
+                text=e.message
+            )
 
 
     def get_tasks_by_project_id(self, project_id):
