@@ -24,9 +24,10 @@ if os.environ.get("SALESFORCE_URL") is not None:
 else:
     SALESFORCE_URL = "SALESFORCE DOMAIN"
 
+DOWNLOAD_LINK = "https://greenwayhealth--c.na45.content.force.com/servlet/servlet.FileDownload?file="
 RTM_READ_DELAY = 1 # 1 second delay between reading from RTM
 EXAMPLE_COMMAND = "sync"
-EXAMPLE_COMMANDs = ["sync", "report"]
+EXAMPLE_COMMANDs = ["sync", "report", "projectplan"]
 MENTION_REGEX = "^<@(|[WU].+?)>(.*)"
 
 def get_start_end_dates(year, week):
@@ -220,13 +221,36 @@ class ScheduleBot:
             else:
                 session_id = command_args[1]
                 self.create_salesforce_instance(session_id)
+
                 is_session_valid = True
                 try:
-                    self.sf.query_more("/services/data/v37.0/sobjects/", True)
+                    self.sf.query_more("/services/data/v38.0/sobjects/", True)
                 except:
                     is_session_valid = False
-                # print(is_session_valid)
-                self.sync_tasks(channel)
+
+                if is_session_valid == False:
+                    response = 'Session is incorrect or expired!'
+                    # Sends the response back to the channel
+                    self.slack_client.api_call(
+                        "chat.postMessage",
+                        channel=channel,
+                        text=response
+                    )
+
+                    return True
+                else:
+                    if command_args[0] == u'sync':
+                        self.sync_tasks(channel)
+                    if command_args[0] == u'projectplan':
+                        modified_start = command_args[2]
+
+                        self.download_attachments(channel, modified_start)
+                        self.slack_client.api_call(
+                            "chat.postMessage",
+                            channel=channel,
+                            text=response or 'Upload Finished!'
+                        )
+
 
     def run(self):
         if self.slack_client.rtm_connect(with_team_state=False):
@@ -253,18 +277,22 @@ class ScheduleBot:
         )
 
         is_session_valid = True
+
         try:
-            self.sf.query_more("/services/data/v37.0/sobjects/", True)
+            self.sf.query_more("/services/data/v38.0/sobjects/", True)
         except:
             is_session_valid = False
 
         test_limit = 0
+        print(is_session_valid)
+        import pdb
+        pdb.set_trace()
         ton = False
-        if not is_session_valid and test_limit < 10:
+        if is_session_valid and test_limit < 10 and ton == True:
             try:
                 sf_tasks = []
-                # sf_project_task = SFType('pse__Project_Task__c', self.session_id, SALESFORCE_URL)
-                # sf_project_task_assign = SFType('pse__Project_Task_Assignment__c', self.session_id, SALESFORCE_URL)
+                sf_project_task = SFType('pse__Project_Task__c', self.session_id, SALESFORCE_URL)
+                sf_project_task_assign = SFType('pse__Project_Task_Assignment__c', self.session_id, SALESFORCE_URL)
                 float_api = FloatAPI()
 
                 projects = float_api.get_projects()
@@ -302,12 +330,12 @@ class ScheduleBot:
                             #         tmp_task["is_duplicate"] = True
                             #         float_task_hash[task_name] = tmp_task
                             #         float_tasks.append(tmp_task)
-                        if len(float_tasks) > 0:
-                            if 'PR-207534' in project["name"]:
-                            import pdb
-                            pdb.set_trace()
+                        # if len(float_tasks) > 0:
+                        #     if 'PR-207534' in project["name"]:
+                        #     import pdb
+                        #     pdb.set_trace()
 
-                        if len(float_tasks) > 0 and ton is True:
+                        if len(float_tasks) > 0:
                             # tags = float_api.get_project_by_id(float_tasks[0]["project_id"])["tags"]
                             sf_tasks = self.get_tasks_by_project_id('PR-'+sf_project_id)                                      
                             for float_task_key in float_task_hash.keys():
@@ -326,93 +354,93 @@ class ScheduleBot:
                                             "or use a different task name".format(project["name"])
                                     )
                                 else:
-                                    if 'PR-207534' in project["name"]:
-                                        for sf_task in sf_tasks:
-                                            if float_task["name"] == sf_task["Name"]:
-                                                start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d') + timedelta(days=1)
-                                                end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d') + timedelta(days=1)
+                                    # if 'PR-207534' in project["name"]:
+                                    for sf_task in sf_tasks:
+                                        if float_task["name"] == sf_task["Name"]:
+                                            start_datetime = datetime.strptime(float_task['start_date'], '%Y-%m-%d') + timedelta(days=1)
+                                            end_datetime = datetime.strptime(float_task['end_date'], '%Y-%m-%d') + timedelta(days=1)
 
-                                                start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S")
-                                                end_datetime_obj = eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
+                                            start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S")
+                                            end_datetime_obj = eastern.localize(end_datetime).strftime("%Y-%m-%dT%H:%M:%S")
 
-                                                float_names = float_task["users"].replace('*', '').split(',')
-                                                contacts_num = len(float_names)
-                                                for username in float_names:
-                                                    float_username = username.strip()
-                                                    msg = ''
-                                                    params = {}
-                                                    # if sf_task['pse__Assigned_Resources__c'] != float_task["users"]:
-                                                    params["pse__Assigned_Resources__c"] = float_username
-                                                    params["pse__Assigned_Resources_Long__c"] = float_username
-                                                    msg = 'assigned resources '
+                                            float_names = float_task["users"].replace('*', '').split(',')
+                                            contacts_num = len(float_names)
+                                            for username in float_names:
+                                                float_username = username.strip()
+                                                msg = ''
+                                                params = {}
+                                                # if sf_task['pse__Assigned_Resources__c'] != float_task["users"]:
+                                                params["pse__Assigned_Resources__c"] = float_username
+                                                params["pse__Assigned_Resources_Long__c"] = float_username
+                                                msg = 'assigned resources '
 
-                                                    # if self.remove_delta(sf_task['pse__Start_Date_Time__c']) != start_datetime_obj.decode() or self.remove_delta(sf_task['pse__End_Date_Time__c']) != end_datetime_obj.decode():
-                                                    params['pse__Start_Date_Time__c'] = start_datetime_obj
-                                                    params['pse__End_Date_Time__c'] = end_datetime_obj
-                                                    msg = 'start & end time '
+                                                # if self.remove_delta(sf_task['pse__Start_Date_Time__c']) != start_datetime_obj.decode() or self.remove_delta(sf_task['pse__End_Date_Time__c']) != end_datetime_obj.decode():
+                                                params['pse__Start_Date_Time__c'] = start_datetime_obj
+                                                params['pse__End_Date_Time__c'] = end_datetime_obj
+                                                msg = 'start & end time '
 
-                                                    contact_info = self.get_contact_id(float_username)
-                                                    d_project_task_asssign = {}
-                                                    if contact_info is not None:
-                                                        if contact_info['is_active']:
-                                                            d_project_task_asssign['pse__Resource__c'] = contact_info['Id']
-                                                            d_project_task_asssign['resource_lookup__c'] = contact_info['Id']
-                                                        else:
-                                                            d_project_task_asssign['pse__External_Resource__c'] = contact_info['Id']
-
-                                                        try:
-                                                            result = sf_project_task.update(sf_task["Id"], params, False)
-                                                            te_status = self.task_exist_in_assignment(sf_task["Id"])
-                                                            ta_result = None
-                                                            if te_status['is_exist']:
-                                                                if contact_info['is_active']:
-                                                                    resource_id = contact_info['Id']
-                                                                else:
-                                                                    resource_id = d_project_task_asssign['pse__External_Resource__c']
-                                                                if resource_id != te_status['resource_id']:
-                                                                    pdb.set_trace()
-                                                                    # try:
-                                                                    #     ta_result = sf_project_task_assign.update(te_status['Id'], d_project_task_asssign, False)
-                                                                    # except:
-                                                                    #     print(project['name'], float_username, "##########")
-                                                                    #     task_status_response = "{}: {} | {} | project {}".format(
-                                                                    #         float_username,
-                                                                    #         'User with same role is already assgined',
-                                                                    #         float_task["name"],
-                                                                    #         project["name"])
-                                                                    #     self.slack_client.api_call(
-                                                                    #         "chat.postMessage",
-                                                                    #         channel=channel,
-                                                                    #         text=task_status_response
-                                                                    #     )
-                                                            else:
-                                                                # pdb.set_trace()
-                                                                d_project_task_asssign['pse__Project_Task__c'] = sf_task['Id']
-                                                                # d_project_task_asssign['pse__Project_ID__c'] = sf_task['Project_ID__c']
-                                                                # ta_result = sf_project_task_assign.create(d_project_task_asssign, False)
-                                                            test_limit = test_limit + 1
-
-                                                            task_status_response = ''
-                                                            if result < 400 and ta_result is not None:
-                                                                self.number_of_success = self.number_of_success + 1
-                                                                task_status_response = "{} | {} | project {}".format(
-                                                                    msg,
-                                                                    float_task["name"],
-                                                                    project["name"])
-                                                                self.slack_client.api_call(
-                                                                    "chat.postMessage",
-                                                                    channel=channel,
-                                                                    text=task_status_response
-                                                                )
-                                                        except Exception as e:
-                                                            print(e)
-                                                            continue
+                                                contact_info = self.get_contact_id(float_username)
+                                                d_project_task_asssign = {}
+                                                if contact_info is not None:
+                                                    if contact_info['is_active']:
+                                                        d_project_task_asssign['pse__Resource__c'] = contact_info['Id']
+                                                        d_project_task_asssign['resource_lookup__c'] = contact_info['Id']
                                                     else:
-                                                        self.slack_client.api_call(
-                                                            "chat.postMessage",
-                                                            channel=channel,
-                                                            text='Contact: {} doesn\'t exist'.format(float_username) 
-                                                        )
+                                                        d_project_task_asssign['pse__External_Resource__c'] = contact_info['Id']
+
+                                                    try:
+                                                        result = sf_project_task.update(sf_task["Id"], params, False)
+                                                        te_status = self.task_exist_in_assignment(sf_task["Id"])
+                                                        ta_result = None
+                                                        if te_status['is_exist']:
+                                                            if contact_info['is_active']:
+                                                                resource_id = contact_info['Id']
+                                                            else:
+                                                                resource_id = d_project_task_asssign['pse__External_Resource__c']
+                                                            if resource_id != te_status['resource_id']:
+                                                                # pdb.set_trace()
+                                                                try:
+                                                                    ta_result = sf_project_task_assign.update(te_status['Id'], d_project_task_asssign, False)
+                                                                except Exception as e:
+                                                                    print(e, project['name'], float_username, "##########")
+                                                                    task_status_response = "{}: {} | {} | project {}".format(
+                                                                        float_username,
+                                                                        'User with same role is already assgined',
+                                                                        float_task["name"],
+                                                                        project["name"])
+                                                                    self.slack_client.api_call(
+                                                                        "chat.postMessage",
+                                                                        channel=channel,
+                                                                        text=task_status_response
+                                                                    )
+                                                        else:
+                                                            # pdb.set_trace()
+                                                            d_project_task_asssign['pse__Project_Task__c'] = sf_task['Id']
+                                                            # d_project_task_asssign['pse__Project_ID__c'] = sf_task['Project_ID__c']
+                                                            ta_result = sf_project_task_assign.create(d_project_task_asssign, False)
+                                                        test_limit = test_limit + 1
+
+                                                        task_status_response = ''
+                                                        if result < 400 and ta_result is not None:
+                                                            self.number_of_success = self.number_of_success + 1
+                                                            task_status_response = "{} | {} | project {}".format(
+                                                                msg,
+                                                                float_task["name"],
+                                                                project["name"])
+                                                            self.slack_client.api_call(
+                                                                "chat.postMessage",
+                                                                channel=channel,
+                                                                text=task_status_response
+                                                            )
+                                                    except Exception as e:
+                                                        print(e)
+                                                        continue
+                                                else:
+                                                    self.slack_client.api_call(
+                                                        "chat.postMessage",
+                                                        channel=channel,
+                                                        text='Contact: {} doesn\'t exist'.format(float_username) 
+                                                    )
 
             except Exception as e:
                 self.slack_client.api_call(
@@ -429,6 +457,75 @@ class ScheduleBot:
             channel=channel,
             text=response or 'Finished!'
         )
+
+    def download_attachments(self, channel, modified_time):
+        self.slack_client.api_call(
+            "chat.postMessage",
+            channel=channel,
+            text='Please wait a moment...'
+        )
+
+        OWNERS = ['Ashley Tuley', 'Brian DeHetre', 'Carlos Rojas',
+                'Chad Ready', 'Jacci Oglesby', 'Jessica Berry',
+                'Leslie Lyle', 'Liam Perigo', 'Lori Foster',
+                'Marie Alberal', 'Michelle Lee', 'Scott Badger',
+                'Susan Fulmer', 'Tiffany Vance-Huffman']
+
+        # Get projects that contains "ATLAS"
+        try:
+            search_key = "ATLAS"
+            query =  "select Id, Name, Assigned_Owner__c from pse__Proj__c where Name like '%{}%'".format(search_key)
+            projects = self.sf.query(query)
+
+
+            if projects["totalSize"] > 0:
+                csv_data = []
+                for project in projects["records"]:
+                    # Get owner
+
+                    if project['Assigned_Owner__c']:
+                        contact = self.get_contact_by_id(project['Assigned_Owner__c'])
+                        print('Contact: ', contact)
+                        if contact and contact in OWNERS:
+                            start_datetime = datetime.strptime(modified_time, '%Y-%m-%d') + timedelta(days=1)
+                            start_datetime_obj = eastern.localize(start_datetime).strftime("%Y-%m-%dT%H:%M:%S.000+0000")
+
+                            attachment_query = "select Id, Name, LastModifiedDate from Attachment where (ParentId = '{}' and \
+                                Name like '%.xls%' and LastModifiedDate > {})".format(project['Id'], start_datetime_obj)
+                            attachments = self.sf.query(attachment_query)
+
+                            if attachments["totalSize"] > 0:
+                                for attachment in attachments["records"]:
+                                    csv_data.append({
+                                        'resource_name': contact,
+                                        'project_name': project['Name'],
+                                        'attachment_name': attachment['Name'],
+                                        'last_modiled_date': attachment['LastModifiedDate'],
+                                        'attachment_url': DOWNLOAD_LINK+attachment['Id']})
+
+                fieldnames = ['resource_name', 'project_name', 'attachment_name', 'attachment_url', 'last_modiled_date']
+                with open('download.csv', 'a') as csv_file:
+                    writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+                    for cdata in csv_data:
+                        writer.writerow({
+                            'resource_name': cdata['resource_name'],
+                            'project_name': cdata['project_name'],
+                            'attachment_name': cdata['attachment_name'],
+                            'last_modiled_date': cdata['last_modiled_date'],
+                            'attachment_url': cdata['attachment_url']})
+                    csv_file.close()
+
+                self.upload('download.csv', channel)
+
+        except Exception as e:
+            print (e)
+            pdb.set_trace()
+        #     self.slack_client.api_call(
+        #         "chat.postMessage",
+        #         channel=channel,
+        #         text=e.message
+        #     )
+
 
     def get_tasks_by_project_id(self, project_id):
         sobject = self.sf.query_more("/services/data/v38.0/sobjects/pse__Proj__c", True)
@@ -488,8 +585,18 @@ class ScheduleBot:
 
         return sobject["records"]
 
+    def get_contact_by_id(self, id):
+        query = "select Id, Name, pse__Is_Resource__c, pse__Is_Resource_Active__c from Contact where Id='{}'".format(id)
+        result = self.sf.query(query)
+        if result['totalSize'] == 0:
+            return None
+
+        if result['records'][0]['pse__Is_Resource__c'] == True and result['records'][0]['pse__Is_Resource_Active__c']:
+            return result['records'][0]['Name']
+
+
     def get_contact_id(self, username):
-        query = "select Id, pse__Is_Resource__c, pse__Is_Resource_Active__c from Contact where name='{}'".format(username)
+        query = "select Id, Name, pse__Is_Resource__c, pse__Is_Resource_Active__c from Contact where name='{}'".format(username)
         result = self.sf.query(query)
         if result['totalSize'] == 0:
             return None
@@ -503,7 +610,8 @@ class ScheduleBot:
             idx = idx + 1
         
         if is_active == True:
-            return {'is_active': is_active, 'Id': result['records'][idx]['Id']}
+            return {'is_active': is_active, 'Id': result['records'][idx]['Id'],
+                    'Name': result['records'][idx]['Name']}
         return {'is_active': is_active, 'Id': username}
 
     def task_exist_in_assignment(self, task_id):
