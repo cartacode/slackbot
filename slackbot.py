@@ -475,7 +475,7 @@ class ScheduleBot:
 
             csv_data = []
             if projects["totalSize"] > 0:
-                for project in projects["records"][:1]:
+                for project in projects["records"]:
                     # Get owner
 
                     if project['Assigned_Owner__c']:
