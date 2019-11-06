@@ -494,24 +494,40 @@ class ScheduleBot:
                                     csv_data.append({
                                         'resource_name': contact,
                                         'project_name': project['Name'],
+                                        'doc_id': attachment['Id'],
                                         'attachment_name': attachment['Name'],
                                         'last_modiled_date': attachment['LastModifiedDate'],
                                         'attachment_url': DOWNLOAD_LINK+attachment['Id']})
 
-                fieldnames = ['resource_name', 'project_name', 'attachment_name', 'attachment_url', 'last_modiled_date']
-                lowercase_str = uuid.uuid4().hex + '.csv'
-                with open(lowercase_str, 'a') as csv_file:
+                fieldnames = ['resource_name', 'project_name', 'attachment_id',
+                                'attachment_name', 'attachment_url', 'last_modiled_date']
+                report_str = './reports/' + uuid.uuid4().hex + '.csv'
+                with open(report_str, 'a') as csv_file:
                     writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
                     for cdata in csv_data:
                         writer.writerow({
                             'resource_name': self.validate_text(cdata['resource_name']),
                             'project_name': self.validate_text(cdata['project_name']),
+                            'attachment_id': self.validate_text(cdata['doc_id']),
                             'attachment_name': self.validate_text(cdata['attachment_name']),
                             'last_modiled_date': self.validate_text(cdata['last_modiled_date'].replace('.000+0000', '')),
                             'attachment_url': self.validate_text(cdata['attachment_url'])})
+
+                        doc_id = cdata['doc_id']
+                        doc_name = self.sf.Attachment.get(doc_id)['Name']
+                        download_url = 'https://{base_url}/services/data/v47.0/sobjects/Attachment/{doc_id}/body'.format(
+                            doc_id=doc_id, base_url=SALESFORCE_URL)
+                        result = self.sf.session.get(download_url,
+                                                    headers=self.sf.headers,stream=True)
+
+                        with open('./excels/'+self.validate_text(cdata['attachment_name']),'wb+') as file:
+                            #retrieve the bytes from the resources incrementally 
+                            for chunk in result.iter_content(1000):
+                                file.write(chunk)
+                        file.close()
                     csv_file.close()
 
-                self.upload(lowercase_str, channel)
+                self.upload(report_str, channel)
 
 
             self.slack_client.api_call(
