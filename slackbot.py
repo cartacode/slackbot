@@ -13,6 +13,7 @@ from datetime import datetime, date, timedelta
 import logging
 logging.basicConfig()
 import pdb
+import uuid
 
 eastern = pytz.timezone('US/Eastern')
 
@@ -474,7 +475,7 @@ class ScheduleBot:
 
             csv_data = []
             if projects["totalSize"] > 0:
-                for project in projects["records"]:
+                for project in projects["records"][:1]:
                     # Get owner
 
                     if project['Assigned_Owner__c']:
@@ -498,18 +499,19 @@ class ScheduleBot:
                                         'attachment_url': DOWNLOAD_LINK+attachment['Id']})
 
                 fieldnames = ['resource_name', 'project_name', 'attachment_name', 'attachment_url', 'last_modiled_date']
-                with open('download.csv', 'a') as csv_file:
+                lowercase_str = uuid.uuid4().hex + '.csv'
+                with open(lowercase_str, 'a') as csv_file:
                     writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
                     for cdata in csv_data:
                         writer.writerow({
                             'resource_name': self.validate_text(cdata['resource_name']),
                             'project_name': self.validate_text(cdata['project_name']),
                             'attachment_name': self.validate_text(cdata['attachment_name']),
-                            'last_modiled_date': self.validate_text(cdata['last_modiled_date']),
+                            'last_modiled_date': self.validate_text(cdata['last_modiled_date'].replace('.000+0000', '')),
                             'attachment_url': self.validate_text(cdata['attachment_url'])})
                     csv_file.close()
 
-                self.upload('download.csv', channel)
+                self.upload(lowercase_str, channel)
 
 
             self.slack_client.api_call(
