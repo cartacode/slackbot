@@ -10,6 +10,8 @@ from simple_salesforce import Salesforce, SFType
 from slackclient import SlackClient
 from dotenv import load_dotenv
 from datetime import datetime, date, timedelta
+import logging
+logging.basicConfig()
 import pdb
 
 eastern = pytz.timezone('US/Eastern')
@@ -241,15 +243,10 @@ class ScheduleBot:
                 else:
                     if command_args[0] == u'sync':
                         self.sync_tasks(channel)
+
                     if command_args[0] == u'projectplan':
                         modified_start = command_args[2]
-
                         self.download_attachments(channel, modified_start)
-                        self.slack_client.api_call(
-                            "chat.postMessage",
-                            channel=channel,
-                            text=response or 'Upload Finished!'
-                        )
 
 
     def run(self):
@@ -475,8 +472,8 @@ class ScheduleBot:
             projects = self.sf.query(query)
 
 
+            csv_data = []
             if projects["totalSize"] > 0:
-                csv_data = []
                 for project in projects["records"]:
                     # Get owner
 
@@ -505,14 +502,21 @@ class ScheduleBot:
                     writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
                     for cdata in csv_data:
                         writer.writerow({
-                            'resource_name': cdata['resource_name'],
-                            'project_name': cdata['project_name'],
-                            'attachment_name': cdata['attachment_name'],
-                            'last_modiled_date': cdata['last_modiled_date'],
-                            'attachment_url': cdata['attachment_url']})
+                            'resource_name': self.validate_text(cdata['resource_name']),
+                            'project_name': self.validate_text(cdata['project_name']),
+                            'attachment_name': self.validate_text(cdata['attachment_name']),
+                            'last_modiled_date': self.validate_text(cdata['last_modiled_date']),
+                            'attachment_url': self.validate_text(cdata['attachment_url'])})
                     csv_file.close()
 
                 self.upload('download.csv', channel)
+
+
+            self.slack_client.api_call(
+                "chat.postMessage",
+                channel=channel,
+                text='Upload Finished! {} items found'.format(len(csv_data))
+            )
 
         except Exception as e:
             self.slack_client.api_call(
@@ -520,6 +524,9 @@ class ScheduleBot:
                 channel=channel,
                 text=e.message
             )
+
+    def validate_text(self, text):
+        return unicode(text).encode('utf-8')
 
 
     def get_tasks_by_project_id(self, project_id):
